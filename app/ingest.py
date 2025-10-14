@@ -90,7 +90,9 @@ async def insert_price_if_changed(session, listing_id, new_price_cents):
         should_insert = True
     else:
         last_price, last_observed = last_record
-        time_diff = dt.datetime.utcnow() - last_observed.replace(tzinfo=None)
+        # Use timezone-aware datetime for comparison
+        now = dt.datetime.now(dt.timezone.utc)
+        time_diff = now - last_observed
 
         if last_price != new_price_cents:
             # Price changed
@@ -103,7 +105,7 @@ async def insert_price_if_changed(session, listing_id, new_price_cents):
         session.add(
             PriceHistory(
                 listing_id=listing_id,
-                observed_at=dt.datetime.utcnow(),
+                observed_at=dt.datetime.now(dt.timezone.utc),
                 price_cents=new_price_cents,
             )
         )
@@ -130,7 +132,8 @@ async def mark_old_listings_inactive(session, hours_threshold: int = 48):
     """
     from sqlalchemy import update
 
-    cutoff_time = dt.datetime.utcnow() - dt.timedelta(hours=hours_threshold)
+    # Use timezone-aware datetime to match database column (timezone=True)
+    cutoff_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=hours_threshold)
 
     # Find items that haven't been seen recently and are still marked as active
     stmt = (
