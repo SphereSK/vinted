@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Environment variables
+.env
+.envrc
+
+# Logs
+*.log
+logs/
+
+# Cookies and session data
+cookies/
+cookies.txt
+*.cookies
+
+# Test/Debug scripts
+test_*.py
+debug_*.py
+check_*.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+proxies/proxies.txt

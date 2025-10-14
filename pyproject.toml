@@ -1,0 +1,26 @@
+[project]
+name = "vinted-scraper"
+version = "0.1.0"
+description = "Async Vinted scraper with PostgreSQL persistence and CLI interface"
+authors = [{ name = "Your Name", email = "you@example.com" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "vinted_scraper==3.0.0a1",
+    "SQLAlchemy[asyncio]",
+    "asyncpg",
+    "python-dotenv",
+    "typer",
+    "aiosqlite",
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "python-crontab"
+]
+
+[project.scripts]
+vinted-scraper = "app.cli:app"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
