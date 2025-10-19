@@ -246,6 +246,12 @@ def scrape(
         help="🔄 Maximum retry attempts per page on 403 errors [default: 3]. "
              "After max retries, page will be skipped"
     ),
+    base_url: str = typer.Option(
+        None,
+        "--base-url",
+        help="🌐 Base Vinted catalog URL for different regions. "
+             "Example: https://www.vinted.com/catalog (US)"
+    ),
 ):
     """
     🔍 Scrape Vinted listings and save to database with price tracking.
@@ -329,6 +335,7 @@ def scrape(
             max_retries=max_retries,
             extra=extra,
             order=order,
+            base_url=base_url,
         )
     )
 

@@ -27,15 +27,23 @@ def ensure_chromium_installed() -> str:
 
     print("⚙️  Downloading portable Chromium (~120 MB, one-time)…")
     url = "https://download-chromium.appspot.com/dl/Linux_x64?type=snapshots"
-    with requests.get(url, stream=True, timeout=60) as r:
-        r.raise_for_status()
-        with open(zip_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
+    try:
+        with requests.get(url, stream=True, timeout=60) as r:
+            r.raise_for_status()
+            with open(zip_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+    except requests.exceptions.RequestException as e:
+        raise RuntimeError(f"❌ Failed to download Chromium: {e}")
 
     print("📦 Extracting Chromium …")
-    with zipfile.ZipFile(zip_path, "r") as z:
-        z.extractall(base_dir)
+    try:
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extractall(base_dir)
+    except zipfile.BadZipFile as e:
+        raise RuntimeError(f"❌ Failed to extract Chromium (bad zip file): {e}")
+    except Exception as e:
+        raise RuntimeError(f"❌ Failed to extract Chromium: {e}")
 
     os.remove(zip_path)
 
@@ -126,8 +134,14 @@ def browser_warmup(locale: str = "sk"):
             print("✅ Cookies saved to cookies.txt")
         else:
             print("⚠️  No cookies captured - site may be blocking automated access")
+    except uc.exceptions.WebDriverException as e:
+        print(f"❌ WebDriver error during browser warmup: {e}")
+        import traceback
+        traceback.print_exc()
     except Exception as e:
         print(f"❌ Browser warmup failed: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         try:
             driver.quit()

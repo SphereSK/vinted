@@ -15,7 +15,11 @@ dependencies = [
     "fastapi",
     "uvicorn[standard]",
     "pydantic",
-    "python-crontab"
+    "python-crontab",
+    "requests",
+    "beautifulsoup4", # For bs4
+    "undetected-chromedriver",
+    "langdetect"
 ]
 
 [project.scripts]

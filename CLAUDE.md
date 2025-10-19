@@ -275,14 +275,14 @@ async def scrape_and_store(
 
 ### Anti-Bot Strategy
 
-1. **Direct Connection** - No proxy (recommended with `--no-proxy`)
-2. **Session Warmup** - Pre-fetches homepage to capture Cloudflare cookies
+1. **Direct Connection** - No proxy (controlled by `--no-proxy` flag)
+2. **Session Warmup** - Pre-fetches homepage to capture Cloudflare cookies (respects `--no-proxy`)
 3. **Cookie Persistence** - Saves/reloads cookies from `cookies.txt`
 4. **Random Delays** - `delay + random.uniform(0, 0.5)` between requests
-5. **Automatic 403 Retry** - Waits configurable time (default 30 min) and retries on rate limits
+5. **Automatic 403 Retry** - Waits configurable time (controlled by `--error-wait`, `--max-retries`) and retries on rate limits
 6. **Browser Fallback** - Falls back to Playwright if warmup fails (experimental)
 
-**Note**: Proxy rotation has been deprecated in favor of direct connections with proper cookies.
+**Note**: Proxy rotation has been deprecated in favor of direct connections with proper cookies, or controlled proxy usage via CLI.
 
 ### 403 Error Handling
 
@@ -295,8 +295,18 @@ When Vinted returns 403 (Forbidden) errors, the scraper automatically:
 
 **CLI Parameters**:
 ```bash
---error-wait INTEGER    # Minutes to wait (default: 30)
---max-retries INTEGER   # Max retry attempts (default: 3)
+  --base-url TEXT             Base Vinted catalog URL (e.g., https://www.vinted.com/catalog)
+  --locale TEXT               Locale code [default: sk]
+
+SCRAPING:
+  --max-pages INTEGER         Pages to scrape [default: 5]
+  --per-page INTEGER          Items per page [default: 24]
+  --delay FLOAT               Delay between requests [default: 1.0]
+  --no-proxy                  Skip proxy (recommended!)
+
+ERROR HANDLING:
+  --error-wait INTEGER        Minutes to wait on 403 errors [default: 30] (now controls retry_with_backoff initial_delay)
+  --max-retries INTEGER       Max retry attempts [default: 3] (now controls retry_with_backoff retries)
 ```
 
 **Example**:

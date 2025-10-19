@@ -214,11 +214,11 @@ async def mark_old_listings_inactive(session, hours_threshold: int = 48):
 # -----------------------------------------------------
 # Main Scraper Logic
 # -----------------------------------------------------
-@retry_with_backoff(retries=5, initial_delay=5, backoff_factor=2)
+@retry_with_backoff(retries=max_retries, initial_delay=5, backoff_factor=2)
 async def search_items_with_retry(v: VintedApi, url: str, per_page: int):
     return await v.search_items(url=url, per_page=per_page)
 
-@retry_with_backoff(retries=3, initial_delay=2, backoff_factor=2)
+@retry_with_backoff(retries=max_retries, initial_delay=2, backoff_factor=2)
 async def get_html_with_retry(url: str):
     return get_html_with_browser(url)
 
@@ -249,6 +249,7 @@ async def scrape_and_store(
     max_retries: int = 3,
     extra: list[str] = None,
     order: str = None,
+    base_url: str = None,
 ):
     """Fetch catalog items from Vinted, enrich with HTML details, and store in DB.
 
@@ -261,9 +262,13 @@ async def scrape_and_store(
         print(f"Scraping locale: {locale}")
         print(f"{'='*60}")
 
-        base_url = f"https://www.vinted.{locale}/catalog"
+        if base_url:
+            current_base_url = base_url
+        else:
+            current_base_url = f"https://www.vinted.{locale}/catalog"
+
         start_url = build_catalog_url(
-            base_url=base_url,
+            base_url=current_base_url,
             search_text=search_text,
             category=category_id,
             platform_id=platform_ids,
@@ -305,14 +310,15 @@ async def _scrape_and_store_locale(
     # --- Warm up session (direct connection only) ---
     print("🔄 Warming up session with headers only...")
     try:
-        warmup_vinted_session(locale=locale, use_proxy=False)
+        warmup_vinted_session(locale=locale, use_proxy=use_proxy)
     except Exception as e:
         print(f"⚠️  Warmup failed: {e}, continuing anyway...")
 
     # --- Start scraping session ---
+    proxies = {"http": os.environ.get("HTTP_PROXY"), "https": os.environ.get("HTTPS_PROXY")} if use_proxy else None
     async with VintedApi(
         locale=locale,
-        proxies=None,
+        proxies=proxies,
         persist_cookies=True,
     ) as v, Session() as session:
 
