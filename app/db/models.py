@@ -30,6 +30,9 @@ class Listing(Base):
     shipping_cents: Mapped[Optional[int]] = mapped_column(Integer)
     total_cents: Mapped[Optional[int]] = mapped_column(Integer)
 
+    # 🌐 Source tracking (vinted, bazos, etc.)
+    source: Mapped[Optional[str]] = mapped_column(String(64), default="vinted")
+
     # Extended fields
     brand: Mapped[Optional[str]] = mapped_column(String(128))
     size: Mapped[Optional[str]] = mapped_column(String(64))

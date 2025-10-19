@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,7 +16,7 @@ class Settings:
     schema: str = os.getenv("SCHEMA", "vinted")
 
     vinted_base_url: str = os.getenv("VINTED_BASE_URL", "https://www.vinted.sk/catalog")
-    vinted_default_locale: str = os.getenv("VINTED_DEFAULT_LOCALE", "sk")
+    vinted_locales: list[str] = field(default_factory=lambda: os.getenv("VINTED_LOCALES", "sk").split(","))
 
     request_delay: float = float(os.getenv("REQUEST_DELAY", "0.5"))
     max_pages: int = int(os.getenv("MAX_PAGES", "5"))

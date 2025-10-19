@@ -17,6 +17,7 @@ class ListingBase(BaseModel):
     photo: Optional[str] = None
     description: Optional[str] = None
     language: Optional[str] = None
+    source: Optional[str] = None  # Source marketplace (vinted, bazos, etc.)
     category_id: Optional[int] = None
     platform_ids: Optional[list] = None
 

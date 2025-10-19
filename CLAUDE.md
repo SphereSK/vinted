@@ -36,6 +36,7 @@ Main table with `url` as unique key. Captures:
 - `seller_name`, `seller_id` - Seller identification
 - `brand`, `condition` - Item metadata
 - `photo` - First photo URL
+- `source` - Marketplace source (vinted, bazos, etc.)
 - `category_id`, `platform_ids` - Filtering metadata
 - `first_seen_at`, `last_seen_at` - Timestamps
 - `is_active` - Deactivated if not seen recently
@@ -111,6 +112,47 @@ vinted-scraper scrape \
   -p 1281 -p 1280 -p 1279 \
   --no-proxy \
   --max-pages 20
+```
+
+### Language Detection (Post-Processing)
+
+The `detect-language` command is a **post-processing step** that runs separately from the main scraper. This decouples slow HTML fetching from the fast catalog scraping flow.
+
+**When to use**:
+- After fast scraping without `--fetch-details`
+- To fill in missing language data for existing listings
+- To avoid slowing down the main scraping flow (keep it at 24 items/min)
+
+**How it works**:
+1. Finds listings with `language IS NULL`
+2. Fetches HTML for each listing
+3. Extracts language from HTML `<html lang="...">` tag
+4. Updates database with detected language
+
+```bash
+# Process all listings without language
+vinted-scraper detect-language
+
+# Process only 10 listings (for testing)
+vinted-scraper detect-language --limit 10
+
+# Process only Vinted listings
+vinted-scraper detect-language --source vinted
+
+# Slower scraping to avoid rate limits
+vinted-scraper detect-language --delay 2.0
+```
+
+**Workflow Example**:
+```bash
+# Step 1: Fast scraping (catalog only, ~24 items/min)
+vinted-scraper scrape --search-text "ps5" -c 3026 -p 1281 --no-proxy --max-pages 20
+
+# Step 2: Post-process language detection (~10 items/min, only for new items)
+vinted-scraper detect-language --limit 50 --delay 1.5
+
+# Step 3: Query for English listings
+psql $DATABASE_URL -c "SELECT title, price_cents/100.0 FROM vinted.listings WHERE language='en' AND is_active=true;"
 ```
 
 ### Web Dashboard
@@ -237,9 +279,42 @@ async def scrape_and_store(
 2. **Session Warmup** - Pre-fetches homepage to capture Cloudflare cookies
 3. **Cookie Persistence** - Saves/reloads cookies from `cookies.txt`
 4. **Random Delays** - `delay + random.uniform(0, 0.5)` between requests
-5. **Browser Fallback** - Falls back to Playwright if warmup fails (experimental)
+5. **Automatic 403 Retry** - Waits configurable time (default 30 min) and retries on rate limits
+6. **Browser Fallback** - Falls back to Playwright if warmup fails (experimental)
 
 **Note**: Proxy rotation has been deprecated in favor of direct connections with proper cookies.
+
+### 403 Error Handling
+
+When Vinted returns 403 (Forbidden) errors, the scraper automatically:
+- Detects the error
+- Waits a configurable period (default: 30 minutes)
+- Shows countdown timer with progress updates
+- Retries the failed page
+- Continues with next page after max retries (default: 3)
+
+**CLI Parameters**:
+```bash
+--error-wait INTEGER    # Minutes to wait (default: 30)
+--max-retries INTEGER   # Max retry attempts (default: 3)
+```
+
+**Example**:
+```bash
+# Large scrape with custom error handling
+vinted-scraper scrape --search-text "ps5" -c 3026 -p 1281 \
+  --no-proxy --max-pages 50 \
+  --error-wait 15 --max-retries 5
+```
+
+**Output on 403**:
+```
+=== Page 7/50 === [144 items, 9m 24s elapsed, ~67m 54s remaining]
+  ⚠️  403 Error detected (attempt 1/3)
+  ⏳ Waiting 30 minutes before retry...
+     Will resume at: 2025-10-14 15:45:00
+     29 minute(s) remaining...
+```
 
 ### Upsert Logic
 
@@ -278,6 +353,7 @@ vinted/
 │   ├── cli.py              # Typer CLI commands
 │   ├── config.py           # Environment variable settings
 │   ├── ingest.py           # Main scraping logic + upsert
+│   ├── postprocess.py      # Post-processing (language detection, etc.)
 │   ├── scheduler.py        # Cron integration
 │   ├── api/
 │   │   ├── main.py         # FastAPI app
@@ -295,6 +371,9 @@ vinted/
 │   └── utils/
 │       ├── url.py          # URL builders
 │       └── categories.py   # Category/platform lists
+├── migrations/
+│   ├── 001_add_source_column.sql  # Database migrations
+│   └── README.md           # Migration instructions
 ├── frontend/
 │   └── index.html          # Vue.js SPA dashboard
 ├── CLAUDE.md               # This file
@@ -430,5 +509,16 @@ ENABLE_DB_LOGGING=true
 ---
 
 **Dashboard**: http://localhost:8000
-**Last Updated**: 2025-10-12
+**Last Updated**: 2025-10-14
 **Documentation**: See `DATA_FIELDS_GUIDE.md` and `SCRAPER_BEHAVIOR.md`
+
+## Recent Changes
+
+### 2025-10-14: Post-Processing & Multi-Source Support
+- Added `source` field to listings table for multi-marketplace support (vinted, bazos, etc.)
+- Created `detect-language` post-processing command to decouple language detection from main scraping
+- Added database migration: `migrations/001_add_source_column.sql`
+- Updated API schemas to include source field
+- All existing listings default to `source='vinted'`
+- **NEW**: Automatic 403 error retry with configurable wait times (`--error-wait`, `--max-retries`)
+- System automatically waits and retries on rate limits, shows countdown timer

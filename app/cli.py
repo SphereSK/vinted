@@ -1,6 +1,7 @@
 import asyncio
 import typer
 from app.ingest import scrape_and_store
+from app.postprocess import process_language_detection
 from app.utils.url import build_catalog_url
 from app.utils.categories import (
     list_common_categories,
@@ -67,6 +68,13 @@ SCRAPING CONTROL:
                               Faster and more reliable than free proxies
                               Use this flag for production!
 
+ERROR HANDLING & RETRIES:
+  --error-wait INTEGER        Minutes to wait when hitting 403/rate limits
+                              [default: 30] Automatically retries after waiting
+
+  --max-retries INTEGER       Maximum retry attempts per page on 403 errors
+                              [default: 3] Skips page after max retries
+
 DETAIL FETCHING (HTML scraping):
   --fetch-details             Fetch full HTML details for ALL items
                               Gets: description, language, photos, shipping
@@ -113,10 +121,11 @@ NOT AVAILABLE:
 ║                           COMMANDS                                    ║
 ╚══════════════════════════════════════════════════════════════════════╝
 
-scrape      - Scrape listings and save to database
-categories  - List available category IDs (with --search to filter)
-platforms   - List video game platform IDs (with --search to filter)
-examples    - Show detailed usage examples (30+ examples)
+scrape           - Scrape listings and save to database
+detect-language  - Post-process listings to detect language (separate step)
+categories       - List available category IDs (with --search to filter)
+platforms        - List video game platform IDs (with --search to filter)
+examples         - Show detailed usage examples (30+ examples)
 
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                        WEB DASHBOARD                                  ║
@@ -199,15 +208,12 @@ def scrape(
         help="⏱️  Delay in seconds between requests [default: 1.0] (min: 0.5). "
              "Increase if you hit rate limits"
     ),
-    base_url: str = typer.Option(
-        "https://www.vinted.sk/catalog",
-        help="🌍 Base Vinted URL [default: vinted.sk]. "
-             "Examples: vinted.com, vinted.fr, vinted.pl"
-    ),
-    locale: str = typer.Option(
-        "sk",
-        help="🗣️  Locale code [default: sk]. "
-             "Examples: en, fr, de, pl, es, it"
+
+    locales: list[str] = typer.Option(
+        ["sk"],
+        "--locale",
+        help="🗣️  Locale code(s) to scrape (repeatable). "
+             "Examples: --locale sk --locale cz"
     ),
     fetch_details: bool = typer.Option(
         False,
@@ -227,6 +233,18 @@ def scrape(
         "--no-proxy",
         help="⚡ Skip proxy and connect directly [RECOMMENDED]. "
              "Faster and more reliable. Use this in production!"
+    ),
+    error_wait_minutes: int = typer.Option(
+        30,
+        "--error-wait",
+        help="⏰ Minutes to wait when hitting 403/rate limit errors [default: 30]. "
+             "System will automatically retry after waiting"
+    ),
+    max_retries: int = typer.Option(
+        3,
+        "--max-retries",
+        help="🔄 Maximum retry attempts per page on 403 errors [default: 3]. "
+             "After max retries, page will be skipped"
     ),
 ):
     """
@@ -295,28 +313,22 @@ def scrape(
     if details_for_new_only:
         fetch_details = True
 
-    start_url = build_catalog_url(
-        base_url=base_url,
-        search_text=search_text,
-        category=category,
-        platform_id=platform_id,
-        extra=extra,
-        order=order,
-    )
-
-    typer.echo(f"Start URL: {start_url}")
     asyncio.run(
         scrape_and_store(
-            start_url=start_url,
+            search_text=search_text,
             max_pages=max_pages,
             per_page=per_page,
             delay=delay,
-            locale=locale,
+            locales=locales,
             fetch_details=fetch_details,
             details_for_new_only=details_for_new_only,
             use_proxy=not no_proxy,
             category_id=category[0] if category else None,  # Use first category as primary
             platform_ids=list(platform_id) if platform_id else None,
+            error_wait_minutes=error_wait_minutes,
+            max_retries=max_retries,
+            extra=extra,
+            order=order,
         )
     )
 
@@ -393,6 +405,68 @@ def platforms(
         typer.echo("\n💡 Use -p <ID> to filter by platform in scrape command")
         typer.echo("   Example: vinted-scraper scrape --search-text 'ps5' -c 3026 -p 1281 -p 1280")
         typer.echo("   (Filters for PS5 and PS4 games)\n")
+
+
+@app.command()
+def detect_language(
+    limit: int = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Maximum number of listings to process (default: all)"
+    ),
+    delay: float = typer.Option(
+        1.5,
+        "--delay",
+        help="Delay between requests in seconds [default: 1.5]"
+    ),
+    source: str = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Filter by source (e.g., 'vinted', 'bazos')"
+    ),
+):
+    """
+    🌐 Post-process listings to detect language from HTML.
+
+    This command fetches HTML for listings that don't have language data
+    and extracts the language information. It's separate from the main
+    scraping flow for better performance.
+
+    ═══════════════════════════════════════════════════════════════
+    💡 WHEN TO USE:
+    ═══════════════════════════════════════════════════════════════
+
+    1. After fast scraping without --fetch-details
+    2. To fill in missing language data
+    3. To avoid slowing down the main scraping flow
+
+    ═══════════════════════════════════════════════════════════════
+    📊 EXAMPLES:
+    ═══════════════════════════════════════════════════════════════
+
+    # Process all listings without language
+    vinted-scraper detect-language
+
+    # Process only 10 listings (for testing)
+    vinted-scraper detect-language --limit 10
+
+    # Process only Vinted listings
+    vinted-scraper detect-language --source vinted
+
+    # Slower scraping to avoid rate limits
+    vinted-scraper detect-language --delay 2.0
+
+    ═══════════════════════════════════════════════════════════════
+    """
+    asyncio.run(
+        process_language_detection(
+            limit=limit,
+            delay=delay,
+            source=source,
+        )
+    )
 
 
 @app.command()
@@ -491,6 +565,10 @@ vinted-scraper scrape --search-text "ps5" -c 3026 \\
 vinted-scraper scrape --search-text "ps5" -c 3026 \\
   -e "price_to=100" --no-proxy --max-pages 10
 
+# Custom 403 error handling (wait 15 mins, 5 retries)
+vinted-scraper scrape --search-text "ps5" -c 3026 \\
+  --error-wait 15 --max-retries 5 --no-proxy --max-pages 50
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  6. PRODUCTION USE CASES
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -525,6 +603,10 @@ SCRAPING:
   --per-page INTEGER          Items per page [default: 24]
   --delay FLOAT               Delay between requests [default: 1.0]
   --no-proxy                  Skip proxy (recommended!)
+
+ERROR HANDLING:
+  --error-wait INTEGER        Minutes to wait on 403 errors [default: 30]
+  --max-retries INTEGER       Max retry attempts per page [default: 3]
 
 DETAILS:
   --fetch-details             Fetch HTML details for ALL items (slow)

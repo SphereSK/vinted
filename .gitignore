@@ -62,3 +62,6 @@ Thumbs.db
 
 # Project specific
 proxies/proxies.txt
+
+.gemini/
+gha-creds-*.json
