@@ -522,3 +522,7 @@ ENABLE_DB_LOGGING=true
 - All existing listings default to `source='vinted'`
 - **NEW**: Automatic 403 error retry with configurable wait times (`--error-wait`, `--max-retries`)
 - System automatically waits and retries on rate limits, shows countdown timer
+
+## Task Master AI Instructions
+**Import Task Master's development workflow commands and guidelines, treat as if import is in the main CLAUDE.md file.**
+@./.taskmaster/CLAUDE.md

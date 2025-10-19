@@ -1,0 +1,17 @@
+# Task ID: 3
+# Title: Wire browser details into ingest flow
+# Status: pending
+# Dependencies: 2
+# Priority: high
+# Description: Replace the `requests` detail path with the new browser-based fetcher behind a selectable strategy, keeping HTTP path as fallback.
+# Details:
+- In `app/ingest.py`, introduce `details_strategy` with values `http` (existing) and `browser` (new). Default to `browser` when `--fetch-details` given, per PRD.
+- Limit parallelism via `asyncio.Semaphore(concurrency)` to protect the browser; configurable via CLI/env (e.g., `DETAILS_CONCURRENCY=2`).
+- On errors, record structured failure and continue; accumulate metrics (success/failure counts, avg time per detail).
+- Reuse `parse_detail.parse_detail_html` for both strategies; only swap fetcher implementation.
+- Keep `--details-for-new-only` behavior intact.
+- Update `app/cli.py` help and pass-through to ingest function.
+
+# Test Strategy:
+- Unit: simulate N detail URLs, stub fetchers to fail then succeed; assert retry path, concurrency limit, and result merging into upsert payload.
+- Manual: run `vinted-scraper scrape --fetch-details --details-strategy browser --max-pages 1` and verify details populate.

@@ -1,0 +1,15 @@
+# Task ID: 5
+# Title: Locale and base URL hardening
+# Status: pending
+# Dependencies: 1
+# Priority: high
+# Description: Refactor URL/headers generation and ensure scraping works across at least sk, com, and fr locales.
+# Details:
+- Consolidate URL building in `app/utils/url.py` to accept `base_url`, `locale`, `categories`, `platform_ids`, `search_text`, extras, and produce stable request URLs.
+- Ensure Accept-Language and UA reflect `--locale`; propagate locale into browser context (if using Playwright) or driver options (UC).
+- Validate differences in `vinted.<tld>/catalog` paths; guard with defaults and allow overrides.
+- Optionally store `locale` on listings; if not present, plan for migration task later (see Task 7).
+
+# Test Strategy:
+- Unit: given parameters, assert the constructed URL matches expected patterns for `.sk`, `.com`, `.fr`.
+- Manual: scrape 1 page in dev with SQLite for each locale flag and confirm non-empty results.

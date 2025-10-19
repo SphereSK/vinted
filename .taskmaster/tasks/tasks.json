@@ -1,0 +1,265 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Assess current codebase and features",
+        "description": "Explore repository to confirm scraper flow, optional HTML details path, CLI flags, API endpoints, DB schema, and existing anti-bot logic to ground extensions in actual code.",
+        "details": "- Inspect files: `pyproject.toml`, `app/ingest.py`, `app/cli.py`, `app/scraper/parse_detail.py`, `app/scraper/parse_header.py`, `app/scraper/session_warmup.py`, `app/api/main.py`, `app/api/schemas.py`, `app/db/models.py`, `frontend/index.html`.\n- Validate that HTML detail fetching currently uses `requests + bs4`, and that 403 handling + wait/retry exists for catalog scraping.\n- Note existing CLI options `--fetch-details`, `--details-for-new-only`, `--no-proxy`, `--error-wait`, `--max-retries`, `--base-url`, `--locale`.\n- Confirm presence of multi-source `source` field and price tracking behavior.\n- Outcome: brief summary to inform subsequent tasks; no code changes yet.",
+        "testStrategy": "Manual verification by reading files and producing a short findings note; cross-check flags and functions exist as assumed.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Inventory repository structure and confirm key modules exist",
+            "description": "List all project files and verify the presence of core modules for scraper, API, DB, and frontend.",
+            "dependencies": [],
+            "details": "- Run `rg --files` to enumerate files.\n- Confirm these exist: `pyproject.toml`, `app/ingest.py`, `app/cli.py`, `app/scraper/parse_detail.py`, `app/scraper/parse_header.py`, `app/scraper/session_warmup.py`, `app/api/main.py`, `app/api/schemas.py`, `app/db/models.py`.\n- Check `frontend/index.html` presence (note: current repo has empty `frontend/` with no index.html).\n- Capture a short file inventory mapping purpose per module.",
+            "status": "done",
+            "testStrategy": "Manual: verify files open and paths match listed modules."
+          },
+          {
+            "id": 2,
+            "title": "Trace end-to-end scraper flow and detail extraction path",
+            "description": "Review how catalog pages are fetched, headers parsed, HTML details fetched, and details parsed.",
+            "dependencies": [
+              1
+            ],
+            "details": "- Open `app/ingest.py` to map the main loop and where it calls `parse_catalog_page` and `parse_detail_html`.\n- Verify catalog fetch path uses `vinted_api_kit` via `search_items_with_retry()`.\n- Confirm detail HTML fetch currently uses browser automation (`app/scraper/browser.py:get_html_with_browser`) with backoff; parsing uses `bs4` in `app/scraper/parse_detail.py`.\n- Note that requests-based detail fetching exists only in post-process (`app/postprocess.py`) not in main ingest.\n- Record any gaps (e.g., `error_wait_minutes`, `max_retries`, `use_proxy` not fully applied in ingest).",
+            "status": "done",
+            "testStrategy": "Manual: follow call graph in code and list concrete functions used per phase."
+          },
+          {
+            "id": 3,
+            "title": "Audit CLI flags, defaults, and their wiring into ingest",
+            "description": "Enumerate CLI options and verify they are honored in the ingest code paths.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "- Inspect `app/cli.py` for options: `--fetch-details`, `--details-for-new-only`, `--no-proxy`, `--error-wait`, `--max-retries`, `--locale`.\n- Confirm `--details-for-new-only` implies `--fetch-details` (present).\n- Cross-check that `error_wait_minutes`, `max_retries`, and proxy toggles are actually used in `app/ingest.py` (currently not fully applied; warmup hardcodes `use_proxy=False`).\n- Note mismatch: help mentions `--base-url`, but no Typer option is defined; ingest builds base URL from `locale` directly.\n- Produce a table of flags → ingest params mapping with any inconsistencies highlighted.",
+            "status": "done",
+            "testStrategy": "Manual: compare Typer option definitions against ingest function signature and usage."
+          },
+          {
+            "id": 4,
+            "title": "Confirm API endpoints, response schemas, and DB fields (source, price tracking)",
+            "description": "Validate existing API resources and the data model support multi-source and price history tracking.",
+            "dependencies": [
+              1,
+              2,
+              3
+            ],
+            "details": "- Review `app/api/main.py` for endpoints: `/api/listings`, `/api/listings/{id}`, `/api/configs` CRUD, `/api/stats`.\n- Review `app/api/schemas.py` and `app/db/models.py` to confirm fields: `source`, `photos`, `platform_ids`, `category_id`, times, and `price_history` relation.\n- Verify price history insertion logic in `insert_price_if_changed()` (first time, on change, or ≥24h).\n- Note defaults (e.g., `source='vinted'`) and indexes/constraints.\n- Record any discrepancies between schema and models.",
+            "status": "done",
+            "testStrategy": "Manual: list endpoints with key fields and confirm they serialize as expected by schemas."
+          },
+          {
+            "id": 5,
+            "title": "Evaluate anti-bot/session warmup and frontend availability; produce findings note",
+            "description": "Assess anti-bot measures and finalize a concise written summary to guide next tasks.",
+            "dependencies": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "details": "- Review `app/scraper/session_warmup.py` (requests-based cookie warmup) and `app/scraper/session_warmup_browser.py` (UC-based warmup) for headers and behavior.\n- Confirm HAR-like headers (UA, Accept-Language) and cookie persistence; note `browser.py` headless UC usage and fixed delays.\n- Check frontend serving in `app/api/main.py` (`/` serves `frontend/index.html`) and note the file is currently missing.\n- Document key findings: scraper flow, detail strategy, retry/backoff design, CLI wiring gaps, API/DB readiness, missing dependencies (`requests`, `bs4`, `undetected-chromedriver`, `langdetect`) in `pyproject.toml`.\n- Save `ASSESSMENT.md` with actionable recommendations.",
+            "status": "done",
+            "testStrategy": "Manual: attempt running API locally for 404 on `/` (optional), otherwise rely on code inspection; verify missing deps in `pyproject.toml`."
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Add browser automation module for listing details",
+        "description": "Implement a robust browser-based detail fetcher to defeat Cloudflare and reliably retrieve description, photos, language, and shipping for detail pages.",
+        "details": "- Create `app/scraper/browser_detail.py` with `async fetch_detail_html(url, locale, timeout_ms) -> str` using either undetected-chromedriver (per PRD) or Playwright; prefer `undetected_chromedriver` if available/allowed.\n- Behavior: headless mode, persistent user data dir, realistic UA, Accept-Language per `--locale`, randomized small delays; import existing cookies if available.\n- Provide an async wrapper that runs sync driver calls via `asyncio.to_thread` to integrate with async ingest pipeline.\n- Reuse existing `parse_detail.parse_detail_html(html)` to extract fields; do not duplicate parsers.\n- Pseudocode:\n```\nasync def fetch_detail_html(url, locale='sk', timeout_ms=30000):\n    def _fetch():\n        from undetected_chromedriver import Chrome, ChromeOptions\n        opts = ChromeOptions(); opts.add_argument('--headless=new')\n        opts.add_argument(f'--lang={locale}')\n        driver = Chrome(options=opts)\n        try:\n            driver.set_page_load_timeout(timeout_ms/1000)\n            driver.get(url)\n            return driver.page_source\n        finally:\n            driver.quit()\n    return await asyncio.to_thread(_fetch)\n```\n- Add small jittered delay between navigations to reduce rate-limit risk.",
+        "testStrategy": "- Unit: mock `fetch_detail_html` to return fixture HTML, assert `parse_detail_html` extracts `description`, `language`, `photos`, `shipping_cents`.\n- Integration (optional): flag-gated smoke test on a saved HTML file; assert parser returns expected dict; avoid network in CI.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Scan repository for detail scraping, ingest flow, and parser usage",
+            "description": "Enumerate files and search code to locate integration points for a browser-based detail HTML fetcher.",
+            "dependencies": [],
+            "details": "Use ripgrep to list files and search for keywords: parse_detail, ingest, fetch, Cloudflare, undetected, webdriver, Playwright. Identify current detail HTML fetching approach, retry/backoff logic, and parser invocation sites.",
+            "status": "pending",
+            "testStrategy": "Manual verification by opening matched files and noting interfaces."
+          },
+          {
+            "id": 2,
+            "title": "Read key modules to capture async patterns and existing interfaces",
+            "description": "Open ingest, CLI, and scraper modules to understand async conventions, flags, logging, and how detail HTML is currently fetched and parsed.",
+            "dependencies": [
+              1
+            ],
+            "details": "Review files like app/ingest.py, app/cli.py, app/scraper/parse_detail.py, app/scraper/parse_header.py, and any session warmup or anti-bot utilities. Record function signatures, error handling, and parser usage patterns.",
+            "status": "pending",
+            "testStrategy": "Manual review with concise integration notes to align implementation."
+          },
+          {
+            "id": 3,
+            "title": "Design async browser_detail API and to_thread wrapper",
+            "description": "Define the new module API and async-to-thread strategy to integrate with the current async ingest pipeline.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Specify app/scraper/browser_detail.py with signature: async fetch_detail_html(url, locale, timeout_ms) -> str. Plan headless undetected-chromedriver setup, persistent user data dir, realistic UA, Accept-Language based on locale, small jittered delays, and cookies import; ensure reuse of parse_detail.parse_detail_html.",
+            "status": "pending",
+            "testStrategy": "Design sanity check against existing ingest and parser call sites."
+          },
+          {
+            "id": 4,
+            "title": "Implement undetected-chromedriver HTML fetcher with headless mode",
+            "description": "Create the module that fetches page HTML honoring locale, timeout, jitter, persistent profile, and robust cleanup; handle absence of undetected-chromedriver gracefully.",
+            "dependencies": [
+              3
+            ],
+            "details": "Implement sync _fetch() using undetected_chromedriver Chrome/ChromeOptions; set --headless=new, --lang=<locale>, persistent user data dir, realistic UA, page load timeout; import cookies if present; add small randomized delay before navigation; return driver.page_source. Expose fetch_detail_html that wraps via await asyncio.to_thread(_fetch).",
+            "status": "pending",
+            "testStrategy": "Unit: monkeypatch _fetch to return fixture HTML; verify wrapper behavior, timeout handling, and exception propagation."
+          },
+          {
+            "id": 5,
+            "title": "Add parser-integration unit tests using HTML fixtures",
+            "description": "Write tests that mock the fetcher to return fixture HTML and reuse the existing parser to validate extraction of description, language, photos, and shipping without network calls.",
+            "dependencies": [
+              4
+            ],
+            "details": "Prepare representative HTML fixtures; mock fetch_detail_html; call parse_detail.parse_detail_html and assert fields; optionally add a local-file smoke test guarded by a flag for manual runs.",
+            "status": "pending",
+            "testStrategy": "Unit tests asserting expected parser outputs; optional flagged smoke test."
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Wire browser details into ingest flow",
+        "description": "Replace the `requests` detail path with the new browser-based fetcher behind a selectable strategy, keeping HTTP path as fallback.",
+        "details": "- In `app/ingest.py`, introduce `details_strategy` with values `http` (existing) and `browser` (new). Default to `browser` when `--fetch-details` given, per PRD.\n- Limit parallelism via `asyncio.Semaphore(concurrency)` to protect the browser; configurable via CLI/env (e.g., `DETAILS_CONCURRENCY=2`).\n- On errors, record structured failure and continue; accumulate metrics (success/failure counts, avg time per detail).\n- Reuse `parse_detail.parse_detail_html` for both strategies; only swap fetcher implementation.\n- Keep `--details-for-new-only` behavior intact.\n- Update `app/cli.py` help and pass-through to ingest function.",
+        "testStrategy": "- Unit: simulate N detail URLs, stub fetchers to fail then succeed; assert retry path, concurrency limit, and result merging into upsert payload.\n- Manual: run `vinted-scraper scrape --fetch-details --details-strategy browser --max-pages 1` and verify details populate.",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 4,
+        "title": "Granular error taxonomy and exponential backoff",
+        "description": "Introduce categorized exception handling and a shared exponential backoff utility for both catalog and detail fetch paths.",
+        "details": "- Add `app/utils/retry.py` with `async backoff(fn, retries=5, base=0.5, factor=2.0, max_delay=60, jitter=True, retry_on=(TimeoutError, NetworkError, HTTPStatusError, RateLimitError))`.\n- Wrap catalog page fetches and detail fetches with the backoff helper.\n- Preserve existing special-case 403 wait-and-retry flow for Vinted, but use backoff for all other transient errors.\n- Emit structured log entries for each attempt: fields include `attempt`, `next_delay`, `error_type`, `url`, `phase` (catalog|detail).\n- Make `--max-retries` and a new `--retry-base` govern behavior; default sensible values per PRD.",
+        "testStrategy": "- Unit: flaky stub that fails N times then succeeds → assert call count and delay pattern; verify jitter bounded.\n- Simulated 403 path: ensure legacy long wait path still triggers; others use backoff.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 5,
+        "title": "Locale and base URL hardening",
+        "description": "Refactor URL/headers generation and ensure scraping works across at least sk, com, and fr locales.",
+        "details": "- Consolidate URL building in `app/utils/url.py` to accept `base_url`, `locale`, `categories`, `platform_ids`, `search_text`, extras, and produce stable request URLs.\n- Ensure Accept-Language and UA reflect `--locale`; propagate locale into browser context (if using Playwright) or driver options (UC).\n- Validate differences in `vinted.<tld>/catalog` paths; guard with defaults and allow overrides.\n- Optionally store `locale` on listings; if not present, plan for migration task later (see Task 7).",
+        "testStrategy": "- Unit: given parameters, assert the constructed URL matches expected patterns for `.sk`, `.com`, `.fr`.\n- Manual: scrape 1 page in dev with SQLite for each locale flag and confirm non-empty results.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 6,
+        "title": "Data cleaning and normalization pipeline",
+        "description": "Create an idempotent, configurable post-processing step to normalize brands, unify sizes, and extract structured hints from descriptions.",
+        "details": "- Implement `app/utils/normalization.py` with pure functions: `normalize_brand(str)->str`, `normalize_size(str)->str|None`, `extract_from_description(str)->dict` (e.g., platform mentions, shipping terms).\n- Add `app/postprocess.py` with `async run_clean(limit=None, source='vinted')` that queries listings and updates normalized fields.\n- CLI: `vinted-scraper clean-data --limit 1000 --source vinted`.\n- Ensure write-back via upsert only touches normalization columns; log before/after when changed.",
+        "testStrategy": "- Unit: comprehensive cases for brand/size normalization and description extraction.\n- E2E on sample records: run once, then again, ensuring idempotence and no unintended changes.",
+        "priority": "medium",
+        "dependencies": [
+          3,
+          5
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 7,
+        "title": "DB migration for locale and normalized fields",
+        "description": "Extend schema and models to store `locale`, `brand_normalized`, and `size_normalized` required by the cleaning pipeline and analytics.",
+        "details": "- Migration SQL in `migrations/`: add columns if not exist: `locale VARCHAR(8)`, `brand_normalized VARCHAR(128)`, `size_normalized VARCHAR(64)` to `vinted.listings`.\n- Update `app/db/models.py` mapped columns and `app/api/schemas.py` to include these as optional fields.\n- Upsert path in `app/ingest.py` should pass through `locale` when known.\n- Backfill script: set `brand_normalized = LOWER(brand)` initial seed where null.",
+        "testStrategy": "- Apply migration on dev DB; verify ORM reflects new columns and API responses include them when present.\n- Unit: serialization round-trip through Pydantic includes optional fields.",
+        "priority": "medium",
+        "dependencies": [
+          6
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 8,
+        "title": "Expose new options via CLI, API, and UI",
+        "description": "Add flags and payload fields for detail strategy and locale; surface cleaning endpoint; minimal UI updates for configs.",
+        "details": "- CLI (`app/cli.py`): add `--details-strategy [browser|http]`, `--browser-details` shortcut, concurrency flag, retry base; update help text. Add `clean-data` command.\n- API (`app/api/main.py`, `app/api/schemas.py`): extend `ScrapeConfig*` with `detail_strategy`, `locale`, `base_url`, and optional `details_concurrency`; add `POST /api/clean` (background task) and extend `/api/stats` with coverage metrics (percent listings with description/language).\n- Frontend (`frontend/index.html`): add fields in config form for locale and detail strategy with helper text; show normalized fields in listing table if present.",
+        "testStrategy": "- CLI: snapshot of `--help` includes new flags.\n- API: OpenAPI schema shows new fields; create/read config round-trips them; running `POST /api/clean` returns accepted and updates stats.\n- UI: manual smoke test creating a config with new fields.",
+        "priority": "medium",
+        "dependencies": [
+          3,
+          5,
+          6,
+          7
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 9,
+        "title": "Observability: structured logs and metrics",
+        "description": "Enhance logging and stats to quantify resilience (retries, success rates) and browser vs HTTP effectiveness.",
+        "details": "- Add a lightweight logging helper to emit JSON logs when `LOG_JSON=true` in `.env` including `event`, `phase`, `attempt`, `delay_ms`, `error`, `strategy`, `locale`, `url_hash`.\n- Track counters/timers in-memory during runs; extend `/api/stats` to include recent run metrics and cumulative success rates for details by strategy.\n- Optionally write summary to `.taskmaster/reports/task-complexity-report.json` or a new report file after runs.",
+        "testStrategy": "- Unit: logger emits required keys; metrics aggregator computes rates correctly.\n- Manual: run scrape; verify stats endpoint reflects retry counts and success ratios; check logs for structured entries.",
+        "priority": "low",
+        "dependencies": [
+          4,
+          8
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": 10,
+        "title": "Documentation and help updates",
+        "description": "Update docs and in-tool help to reflect browser-based details, new retry model, multi-locale support, and cleaning pipeline.",
+        "details": "- Update `README.md`, `HELP_REFERENCE.md`, and `CLAUDE.md` with: `--details-strategy` (default browser), locale/base-url guidance, concurrency, backoff, and `clean-data` workflow.\n- Add examples for `sk`, `fr`, `com` locales and performance expectations (browser ~10 items/min; catalog ~24 items/min).\n- Add troubleshooting section for headless browser (dependencies, sandbox flags, GPU issues) and rate-limit guidance.\n- Ensure `PROJECT_SUMMARY.md` and web dashboard texts reference new fields/flows where relevant.",
+        "testStrategy": "- Render docs locally and verify links/commands; `vinted-scraper --help` and `vinted-scraper scrape --help` include new options and accurate defaults.",
+        "priority": "medium",
+        "dependencies": [
+          2,
+          3,
+          4,
+          5,
+          6,
+          8,
+          9
+        ],
+        "status": "pending",
+        "subtasks": []
+      }
+    ],
+    "metadata": {
+      "created": "2025-10-19T19:12:39.729Z",
+      "updated": "2025-10-19T20:14:03.231Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

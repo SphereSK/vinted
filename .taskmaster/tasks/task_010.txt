@@ -1,0 +1,14 @@
+# Task ID: 10
+# Title: Documentation and help updates
+# Status: pending
+# Dependencies: 2, 3, 4, 5, 6, 8, 9
+# Priority: medium
+# Description: Update docs and in-tool help to reflect browser-based details, new retry model, multi-locale support, and cleaning pipeline.
+# Details:
+- Update `README.md`, `HELP_REFERENCE.md`, and `CLAUDE.md` with: `--details-strategy` (default browser), locale/base-url guidance, concurrency, backoff, and `clean-data` workflow.
+- Add examples for `sk`, `fr`, `com` locales and performance expectations (browser ~10 items/min; catalog ~24 items/min).
+- Add troubleshooting section for headless browser (dependencies, sandbox flags, GPU issues) and rate-limit guidance.
+- Ensure `PROJECT_SUMMARY.md` and web dashboard texts reference new fields/flows where relevant.
+
+# Test Strategy:
+- Render docs locally and verify links/commands; `vinted-scraper --help` and `vinted-scraper scrape --help` include new options and accurate defaults.

@@ -1,0 +1,15 @@
+# Task ID: 6
+# Title: Data cleaning and normalization pipeline
+# Status: pending
+# Dependencies: 3, 5
+# Priority: medium
+# Description: Create an idempotent, configurable post-processing step to normalize brands, unify sizes, and extract structured hints from descriptions.
+# Details:
+- Implement `app/utils/normalization.py` with pure functions: `normalize_brand(str)->str`, `normalize_size(str)->str|None`, `extract_from_description(str)->dict` (e.g., platform mentions, shipping terms).
+- Add `app/postprocess.py` with `async run_clean(limit=None, source='vinted')` that queries listings and updates normalized fields.
+- CLI: `vinted-scraper clean-data --limit 1000 --source vinted`.
+- Ensure write-back via upsert only touches normalization columns; log before/after when changed.
+
+# Test Strategy:
+- Unit: comprehensive cases for brand/size normalization and description extraction.
+- E2E on sample records: run once, then again, ensuring idempotence and no unintended changes.

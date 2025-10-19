@@ -1,0 +1,32 @@
+# Task ID: 2
+# Title: Add browser automation module for listing details
+# Status: pending
+# Dependencies: 1
+# Priority: high
+# Description: Implement a robust browser-based detail fetcher to defeat Cloudflare and reliably retrieve description, photos, language, and shipping for detail pages.
+# Details:
+- Create `app/scraper/browser_detail.py` with `async fetch_detail_html(url, locale, timeout_ms) -> str` using either undetected-chromedriver (per PRD) or Playwright; prefer `undetected_chromedriver` if available/allowed.
+- Behavior: headless mode, persistent user data dir, realistic UA, Accept-Language per `--locale`, randomized small delays; import existing cookies if available.
+- Provide an async wrapper that runs sync driver calls via `asyncio.to_thread` to integrate with async ingest pipeline.
+- Reuse existing `parse_detail.parse_detail_html(html)` to extract fields; do not duplicate parsers.
+- Pseudocode:
+```
+async def fetch_detail_html(url, locale='sk', timeout_ms=30000):
+    def _fetch():
+        from undetected_chromedriver import Chrome, ChromeOptions
+        opts = ChromeOptions(); opts.add_argument('--headless=new')
+        opts.add_argument(f'--lang={locale}')
+        driver = Chrome(options=opts)
+        try:
+            driver.set_page_load_timeout(timeout_ms/1000)
+            driver.get(url)
+            return driver.page_source
+        finally:
+            driver.quit()
+    return await asyncio.to_thread(_fetch)
+```
+- Add small jittered delay between navigations to reduce rate-limit risk.
+
+# Test Strategy:
+- Unit: mock `fetch_detail_html` to return fixture HTML, assert `parse_detail_html` extracts `description`, `language`, `photos`, `shipping_cents`.
+- Integration (optional): flag-gated smoke test on a saved HTML file; assert parser returns expected dict; avoid network in CI.

@@ -1,0 +1,15 @@
+# Task ID: 8
+# Title: Expose new options via CLI, API, and UI
+# Status: pending
+# Dependencies: 3, 5, 6, 7
+# Priority: medium
+# Description: Add flags and payload fields for detail strategy and locale; surface cleaning endpoint; minimal UI updates for configs.
+# Details:
+- CLI (`app/cli.py`): add `--details-strategy [browser|http]`, `--browser-details` shortcut, concurrency flag, retry base; update help text. Add `clean-data` command.
+- API (`app/api/main.py`, `app/api/schemas.py`): extend `ScrapeConfig*` with `detail_strategy`, `locale`, `base_url`, and optional `details_concurrency`; add `POST /api/clean` (background task) and extend `/api/stats` with coverage metrics (percent listings with description/language).
+- Frontend (`frontend/index.html`): add fields in config form for locale and detail strategy with helper text; show normalized fields in listing table if present.
+
+# Test Strategy:
+- CLI: snapshot of `--help` includes new flags.
+- API: OpenAPI schema shows new fields; create/read config round-trips them; running `POST /api/clean` returns accepted and updates stats.
+- UI: manual smoke test creating a config with new fields.

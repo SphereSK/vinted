@@ -1,0 +1,15 @@
+# Task ID: 1
+# Title: Assess current codebase and features
+# Status: pending
+# Dependencies: None
+# Priority: high
+# Description: Explore repository to confirm scraper flow, optional HTML details path, CLI flags, API endpoints, DB schema, and existing anti-bot logic to ground extensions in actual code.
+# Details:
+- Inspect files: `pyproject.toml`, `app/ingest.py`, `app/cli.py`, `app/scraper/parse_detail.py`, `app/scraper/parse_header.py`, `app/scraper/session_warmup.py`, `app/api/main.py`, `app/api/schemas.py`, `app/db/models.py`, `frontend/index.html`.
+- Validate that HTML detail fetching currently uses `requests + bs4`, and that 403 handling + wait/retry exists for catalog scraping.
+- Note existing CLI options `--fetch-details`, `--details-for-new-only`, `--no-proxy`, `--error-wait`, `--max-retries`, `--base-url`, `--locale`.
+- Confirm presence of multi-source `source` field and price tracking behavior.
+- Outcome: brief summary to inform subsequent tasks; no code changes yet.
+
+# Test Strategy:
+Manual verification by reading files and producing a short findings note; cross-check flags and functions exist as assumed.

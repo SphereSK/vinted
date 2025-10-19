@@ -1,0 +1,16 @@
+# Task ID: 4
+# Title: Granular error taxonomy and exponential backoff
+# Status: pending
+# Dependencies: 1
+# Priority: high
+# Description: Introduce categorized exception handling and a shared exponential backoff utility for both catalog and detail fetch paths.
+# Details:
+- Add `app/utils/retry.py` with `async backoff(fn, retries=5, base=0.5, factor=2.0, max_delay=60, jitter=True, retry_on=(TimeoutError, NetworkError, HTTPStatusError, RateLimitError))`.
+- Wrap catalog page fetches and detail fetches with the backoff helper.
+- Preserve existing special-case 403 wait-and-retry flow for Vinted, but use backoff for all other transient errors.
+- Emit structured log entries for each attempt: fields include `attempt`, `next_delay`, `error_type`, `url`, `phase` (catalog|detail).
+- Make `--max-retries` and a new `--retry-base` govern behavior; default sensible values per PRD.
+
+# Test Strategy:
+- Unit: flaky stub that fails N times then succeeds → assert call count and delay pattern; verify jitter bounded.
+- Simulated 403 path: ensure legacy long wait path still triggers; others use backoff.

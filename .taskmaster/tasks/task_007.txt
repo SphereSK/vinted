@@ -1,0 +1,15 @@
+# Task ID: 7
+# Title: DB migration for locale and normalized fields
+# Status: pending
+# Dependencies: 6
+# Priority: medium
+# Description: Extend schema and models to store `locale`, `brand_normalized`, and `size_normalized` required by the cleaning pipeline and analytics.
+# Details:
+- Migration SQL in `migrations/`: add columns if not exist: `locale VARCHAR(8)`, `brand_normalized VARCHAR(128)`, `size_normalized VARCHAR(64)` to `vinted.listings`.
+- Update `app/db/models.py` mapped columns and `app/api/schemas.py` to include these as optional fields.
+- Upsert path in `app/ingest.py` should pass through `locale` when known.
+- Backfill script: set `brand_normalized = LOWER(brand)` initial seed where null.
+
+# Test Strategy:
+- Apply migration on dev DB; verify ORM reflects new columns and API responses include them when present.
+- Unit: serialization round-trip through Pydantic includes optional fields.

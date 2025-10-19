@@ -1,0 +1,14 @@
+# Task ID: 9
+# Title: Observability: structured logs and metrics
+# Status: pending
+# Dependencies: 4, 8
+# Priority: low
+# Description: Enhance logging and stats to quantify resilience (retries, success rates) and browser vs HTTP effectiveness.
+# Details:
+- Add a lightweight logging helper to emit JSON logs when `LOG_JSON=true` in `.env` including `event`, `phase`, `attempt`, `delay_ms`, `error`, `strategy`, `locale`, `url_hash`.
+- Track counters/timers in-memory during runs; extend `/api/stats` to include recent run metrics and cumulative success rates for details by strategy.
+- Optionally write summary to `.taskmaster/reports/task-complexity-report.json` or a new report file after runs.
+
+# Test Strategy:
+- Unit: logger emits required keys; metrics aggregator computes rates correctly.
+- Manual: run scrape; verify stats endpoint reflects retry counts and success ratios; check logs for structured entries.
