@@ -102,12 +102,24 @@ class ScrapeConfig(Base):
     search_text: Mapped[str] = mapped_column(String(256), nullable=False)
     categories: Mapped[Optional[list]] = mapped_column(JSON)  # List of category IDs
     platform_ids: Mapped[Optional[list]] = mapped_column(JSON)  # List of platform IDs
+    extra_filters: Mapped[Optional[list]] = mapped_column(JSON)  # Additional query parameters (-e)
+    locales: Mapped[Optional[list]] = mapped_column(JSON)  # Locales to scrape (maps to --locale)
+    order: Mapped[Optional[str]] = mapped_column(String(64))
+    fetch_details: Mapped[bool] = mapped_column(Boolean, default=False)
+    details_for_new_only: Mapped[bool] = mapped_column(Boolean, default=False)
+    use_proxy: Mapped[bool] = mapped_column(Boolean, default=True)
+    extra_args: Mapped[Optional[list]] = mapped_column(JSON)  # Additional CLI arguments appended verbatim
+    error_wait_minutes: Mapped[Optional[int]] = mapped_column(Integer, default=30)
+    max_retries: Mapped[Optional[int]] = mapped_column(Integer, default=3)
+    base_url: Mapped[Optional[str]] = mapped_column(String(512))
+    details_strategy: Mapped[Optional[str]] = mapped_column(String(32), default="browser")
+    details_concurrency: Mapped[Optional[int]] = mapped_column(Integer, default=2)
+    healthcheck_ping_url: Mapped[Optional[str]] = mapped_column(String(512))
 
     # Scraping parameters
     max_pages: Mapped[int] = mapped_column(Integer, default=5)
     per_page: Mapped[int] = mapped_column(Integer, default=24)
     delay: Mapped[float] = mapped_column(Numeric(5, 2), default=1.0)
-    fetch_details: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Cron schedule
     cron_schedule: Mapped[Optional[str]] = mapped_column(String(128))  # e.g., "0 */6 * * *"

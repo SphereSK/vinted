@@ -12,6 +12,7 @@ export DATABASE_URL="postgresql+asyncpg://vinted_user:password@127.0.0.1:6432/vi
 
 # Run migration (extract connection details and use psql)
 psql -h 127.0.0.1 -p 6432 -U vinted_user -d vinted_db -f migrations/001_add_source_column.sql
+psql -h 127.0.0.1 -p 6432 -U vinted_user -d vinted_db -f migrations/002_expand_scrape_configs.sql
 ```
 
 ### SQLite
@@ -19,6 +20,8 @@ psql -h 127.0.0.1 -p 6432 -U vinted_user -d vinted_db -f migrations/001_add_sour
 ```bash
 # For SQLite, uncomment the SQLite-specific lines in the migration file first
 sqlite3 vinted.db < migrations/001_add_source_column.sql
+# Apply sequentially for new columns exposed to FastAPI/cron builder
+sqlite3 vinted.db < migrations/002_expand_scrape_configs.sql
 ```
 
 ## Migration History
@@ -26,6 +29,7 @@ sqlite3 vinted.db < migrations/001_add_source_column.sql
 | #   | File                           | Description                                  | Date       |
 | --- | ------------------------------ | -------------------------------------------- | ---------- |
 | 001 | `001_add_source_column.sql`    | Add source field to track marketplace origin | 2025-10-14 |
+| 002 | `002_expand_scrape_configs.sql` | Extend scrape_configs with CLI/cron options  | 2025-10-20 |
 
 ## Creating New Migrations
 

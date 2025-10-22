@@ -22,5 +22,7 @@ class Settings:
     max_pages: int = int(os.getenv("MAX_PAGES", "5"))
     per_page: int = int(os.getenv("PER_PAGE", "24"))
     fetch_details: bool = _as_bool(os.getenv("FETCH_DETAILS"), True)
+    fastapi_api_key: str | None = os.getenv("FASTAPI_API_KEY")
+    fastapi_api_key_header: str = os.getenv("FASTAPI_API_KEY_HEADER", "X-API-Key")
 
 settings = Settings()

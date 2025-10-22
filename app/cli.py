@@ -252,6 +252,16 @@ def scrape(
         help="🌐 Base Vinted catalog URL for different regions. "
              "Example: https://www.vinted.com/catalog (US)"
     ),
+    details_strategy: str = typer.Option(
+        "browser",
+        "--details-strategy",
+        help="⚙️ Strategy for fetching details. 'browser' (default) or 'http'."
+    ),
+    details_concurrency: int = typer.Option(
+        2,
+        "--details-concurrency",
+        help="⚙️ Concurrency for fetching details [default: 2]."
+    ),
 ):
     """
     🔍 Scrape Vinted listings and save to database with price tracking.
@@ -336,6 +346,8 @@ def scrape(
             extra=extra,
             order=order,
             base_url=base_url,
+            details_strategy=details_strategy,
+            details_concurrency=details_concurrency,
         )
     )
 

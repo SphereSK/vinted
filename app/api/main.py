@@ -15,6 +15,7 @@ from app.db.session import Session, init_db
 from app.api.schemas import (
     ListingResponse,
     ListingDetail,
+    ListingListResponse,
     PriceHistoryResponse,
     ScrapeConfigCreate,
     ScrapeConfigUpdate,
@@ -62,32 +63,72 @@ async def startup_event():
 
 # ==================== Listings Endpoints ====================
 
-@app.get("/api/listings", response_model=list[ListingResponse])
+SORTABLE_LISTING_FIELDS = {
+    "last_seen_at": Listing.last_seen_at,
+    "first_seen_at": Listing.first_seen_at,
+    "price": Listing.price_cents,
+    "title": Listing.title,
+}
+
+
+@app.get("/api/listings", response_model=ListingListResponse)
 async def get_listings(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(50, ge=1, le=500),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
     search: Optional[str] = None,
     active_only: bool = True,
+    sort_field: str = Query("last_seen_at"),
+    sort_order: str = Query("desc"),
+    currency: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get list of listings with pagination and search."""
-    query = select(Listing)
+    """Get list of listings with pagination, search, sorting, and currency filters."""
+    offset = (page - 1) * page_size
 
+    filters = []
     if active_only:
-        query = query.where(Listing.is_active == True)
-
+        filters.append(Listing.is_active.is_(True))
     if search:
-        query = query.where(Listing.title.ilike(f"%{search}%"))
+        filters.append(Listing.title.ilike(f"%{search}%"))
+    if currency:
+        filters.append(Listing.currency == currency)
 
-    query = query.order_by(Listing.last_seen_at.desc()).offset(skip).limit(limit)
+    sort_key = sort_field.lower()
+    if sort_key not in SORTABLE_LISTING_FIELDS:
+        raise HTTPException(status_code=400, detail="Invalid sort field")
+
+    sort_direction = sort_order.lower()
+    if sort_direction not in {"asc", "desc"}:
+        raise HTTPException(status_code=400, detail="Invalid sort order")
+
+    order_column = SORTABLE_LISTING_FIELDS[sort_key]
+    if sort_direction == "desc":
+        order_clause = order_column.desc().nullslast()
+    else:
+        order_clause = order_column.asc().nullsfirst()
+
+    base_query = select(Listing)
+    if filters:
+        base_query = base_query.where(*filters)
+
+    query = base_query.order_by(order_clause).offset(offset).limit(page_size)
 
     result = await db.execute(query)
     listings = result.scalars().all()
 
-    # Enrich with price change information
+    count_stmt = select(func.count()).select_from(Listing)
+    if filters:
+        count_stmt = count_stmt.where(*filters)
+    total = (await db.execute(count_stmt)).scalar() or 0
+
+    currency_stmt = select(Listing.currency).distinct()
+    if filters:
+        currency_stmt = currency_stmt.where(*filters)
+    currency_rows = await db.execute(currency_stmt.order_by(Listing.currency.asc()))
+    available_currencies = sorted({row[0] for row in currency_rows if row[0]})
+
     enriched = []
     for listing in listings:
-        # Get previous price from history
         price_result = await db.execute(
             select(PriceHistory.price_cents)
             .where(PriceHistory.listing_id == listing.id)
@@ -105,7 +146,7 @@ async def get_listings(
             previous = prices[1]
             listing_dict['previous_price_cents'] = previous
 
-            if current and previous:
+            if current is not None and previous is not None:
                 if current > previous:
                     listing_dict['price_change'] = 'up'
                 elif current < previous:
@@ -115,7 +156,16 @@ async def get_listings(
 
         enriched.append(ListingResponse(**listing_dict))
 
-    return enriched
+    has_next = offset + len(enriched) < total
+
+    return ListingListResponse(
+        items=enriched,
+        total=int(total),
+        page=page,
+        page_size=page_size,
+        has_next=has_next,
+        available_currencies=available_currencies,
+    )
 
 
 @app.get("/api/listings/{listing_id}", response_model=ListingDetail)
@@ -139,7 +189,9 @@ async def get_listing(listing_id: int, db: AsyncSession = Depends(get_db)):
 
     return ListingDetail(
         **listing.__dict__,
-        price_history=[PriceHistoryResponse.from_orm(p) for p in prices]
+        price_history=[
+            PriceHistoryResponse.model_validate(p) for p in prices
+        ]
     )
 
 
@@ -167,7 +219,7 @@ async def create_config(
     db: AsyncSession = Depends(get_db),
 ):
     """Create new scrape configuration."""
-    db_config = ScrapeConfig(**config.dict())
+    db_config = ScrapeConfig(**config.model_dump())
     db.add(db_config)
     await db.commit()
     await db.refresh(db_config)
@@ -212,7 +264,7 @@ async def update_config(
         raise HTTPException(status_code=404, detail="Configuration not found")
 
     # Update fields
-    for key, value in config_update.dict(exclude_unset=True).items():
+    for key, value in config_update.model_dump(exclude_unset=True).items():
         setattr(config, key, value)
 
     await db.commit()

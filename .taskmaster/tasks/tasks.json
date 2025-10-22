@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": 1,
+        "id": "1",
         "title": "Assess current codebase and features",
         "description": "Explore repository to confirm scraper flow, optional HTML details path, CLI flags, API endpoints, DB schema, and existing anti-bot logic to ground extensions in actual code.",
         "details": "- Inspect files: `pyproject.toml`, `app/ingest.py`, `app/cli.py`, `app/scraper/parse_detail.py`, `app/scraper/parse_header.py`, `app/scraper/session_warmup.py`, `app/api/main.py`, `app/api/schemas.py`, `app/db/models.py`, `frontend/index.html`.\n- Validate that HTML detail fetching currently uses `requests + bs4`, and that 403 handling + wait/retry exists for catalog scraping.\n- Note existing CLI options `--fetch-details`, `--details-for-new-only`, `--no-proxy`, `--error-wait`, `--max-retries`, `--base-url`, `--locale`.\n- Confirm presence of multi-source `source` field and price tracking behavior.\n- Outcome: brief summary to inform subsequent tasks; no code changes yet.",
@@ -18,7 +18,8 @@
             "dependencies": [],
             "details": "- Run `rg --files` to enumerate files.\n- Confirm these exist: `pyproject.toml`, `app/ingest.py`, `app/cli.py`, `app/scraper/parse_detail.py`, `app/scraper/parse_header.py`, `app/scraper/session_warmup.py`, `app/api/main.py`, `app/api/schemas.py`, `app/db/models.py`.\n- Check `frontend/index.html` presence (note: current repo has empty `frontend/` with no index.html).\n- Capture a short file inventory mapping purpose per module.",
             "status": "done",
-            "testStrategy": "Manual: verify files open and paths match listed modules."
+            "testStrategy": "Manual: verify files open and paths match listed modules.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -29,7 +30,8 @@
             ],
             "details": "- Open `app/ingest.py` to map the main loop and where it calls `parse_catalog_page` and `parse_detail_html`.\n- Verify catalog fetch path uses `vinted_api_kit` via `search_items_with_retry()`.\n- Confirm detail HTML fetch currently uses browser automation (`app/scraper/browser.py:get_html_with_browser`) with backoff; parsing uses `bs4` in `app/scraper/parse_detail.py`.\n- Note that requests-based detail fetching exists only in post-process (`app/postprocess.py`) not in main ingest.\n- Record any gaps (e.g., `error_wait_minutes`, `max_retries`, `use_proxy` not fully applied in ingest).",
             "status": "done",
-            "testStrategy": "Manual: follow call graph in code and list concrete functions used per phase."
+            "testStrategy": "Manual: follow call graph in code and list concrete functions used per phase.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -41,7 +43,8 @@
             ],
             "details": "- Inspect `app/cli.py` for options: `--fetch-details`, `--details-for-new-only`, `--no-proxy`, `--error-wait`, `--max-retries`, `--locale`.\n- Confirm `--details-for-new-only` implies `--fetch-details` (present).\n- Cross-check that `error_wait_minutes`, `max_retries`, and proxy toggles are actually used in `app/ingest.py` (currently not fully applied; warmup hardcodes `use_proxy=False`).\n- Note mismatch: help mentions `--base-url`, but no Typer option is defined; ingest builds base URL from `locale` directly.\n- Produce a table of flags → ingest params mapping with any inconsistencies highlighted.",
             "status": "done",
-            "testStrategy": "Manual: compare Typer option definitions against ingest function signature and usage."
+            "testStrategy": "Manual: compare Typer option definitions against ingest function signature and usage.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -54,7 +57,8 @@
             ],
             "details": "- Review `app/api/main.py` for endpoints: `/api/listings`, `/api/listings/{id}`, `/api/configs` CRUD, `/api/stats`.\n- Review `app/api/schemas.py` and `app/db/models.py` to confirm fields: `source`, `photos`, `platform_ids`, `category_id`, times, and `price_history` relation.\n- Verify price history insertion logic in `insert_price_if_changed()` (first time, on change, or ≥24h).\n- Note defaults (e.g., `source='vinted'`) and indexes/constraints.\n- Record any discrepancies between schema and models.",
             "status": "done",
-            "testStrategy": "Manual: list endpoints with key fields and confirm they serialize as expected by schemas."
+            "testStrategy": "Manual: list endpoints with key fields and confirm they serialize as expected by schemas.",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -68,21 +72,22 @@
             ],
             "details": "- Review `app/scraper/session_warmup.py` (requests-based cookie warmup) and `app/scraper/session_warmup_browser.py` (UC-based warmup) for headers and behavior.\n- Confirm HAR-like headers (UA, Accept-Language) and cookie persistence; note `browser.py` headless UC usage and fixed delays.\n- Check frontend serving in `app/api/main.py` (`/` serves `frontend/index.html`) and note the file is currently missing.\n- Document key findings: scraper flow, detail strategy, retry/backoff design, CLI wiring gaps, API/DB readiness, missing dependencies (`requests`, `bs4`, `undetected-chromedriver`, `langdetect`) in `pyproject.toml`.\n- Save `ASSESSMENT.md` with actionable recommendations.",
             "status": "done",
-            "testStrategy": "Manual: attempt running API locally for 404 on `/` (optional), otherwise rely on code inspection; verify missing deps in `pyproject.toml`."
+            "testStrategy": "Manual: attempt running API locally for 404 on `/` (optional), otherwise rely on code inspection; verify missing deps in `pyproject.toml`.",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 2,
+        "id": "2",
         "title": "Add browser automation module for listing details",
         "description": "Implement a robust browser-based detail fetcher to defeat Cloudflare and reliably retrieve description, photos, language, and shipping for detail pages.",
         "details": "- Create `app/scraper/browser_detail.py` with `async fetch_detail_html(url, locale, timeout_ms) -> str` using either undetected-chromedriver (per PRD) or Playwright; prefer `undetected_chromedriver` if available/allowed.\n- Behavior: headless mode, persistent user data dir, realistic UA, Accept-Language per `--locale`, randomized small delays; import existing cookies if available.\n- Provide an async wrapper that runs sync driver calls via `asyncio.to_thread` to integrate with async ingest pipeline.\n- Reuse existing `parse_detail.parse_detail_html(html)` to extract fields; do not duplicate parsers.\n- Pseudocode:\n```\nasync def fetch_detail_html(url, locale='sk', timeout_ms=30000):\n    def _fetch():\n        from undetected_chromedriver import Chrome, ChromeOptions\n        opts = ChromeOptions(); opts.add_argument('--headless=new')\n        opts.add_argument(f'--lang={locale}')\n        driver = Chrome(options=opts)\n        try:\n            driver.set_page_load_timeout(timeout_ms/1000)\n            driver.get(url)\n            return driver.page_source\n        finally:\n            driver.quit()\n    return await asyncio.to_thread(_fetch)\n```\n- Add small jittered delay between navigations to reduce rate-limit risk.",
         "testStrategy": "- Unit: mock `fetch_detail_html` to return fixture HTML, assert `parse_detail_html` extracts `description`, `language`, `photos`, `shipping_cents`.\n- Integration (optional): flag-gated smoke test on a saved HTML file; assert parser returns expected dict; avoid network in CI.",
         "priority": "high",
         "dependencies": [
-          1
+          "1"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -90,8 +95,9 @@
             "description": "Enumerate files and search code to locate integration points for a browser-based detail HTML fetcher.",
             "dependencies": [],
             "details": "Use ripgrep to list files and search for keywords: parse_detail, ingest, fetch, Cloudflare, undetected, webdriver, Playwright. Identify current detail HTML fetching approach, retry/backoff logic, and parser invocation sites.",
-            "status": "pending",
-            "testStrategy": "Manual verification by opening matched files and noting interfaces."
+            "status": "done",
+            "testStrategy": "Manual verification by opening matched files and noting interfaces.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -101,8 +107,9 @@
               1
             ],
             "details": "Review files like app/ingest.py, app/cli.py, app/scraper/parse_detail.py, app/scraper/parse_header.py, and any session warmup or anti-bot utilities. Record function signatures, error handling, and parser usage patterns.",
-            "status": "pending",
-            "testStrategy": "Manual review with concise integration notes to align implementation."
+            "status": "done",
+            "testStrategy": "Manual review with concise integration notes to align implementation.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -113,8 +120,9 @@
               2
             ],
             "details": "Specify app/scraper/browser_detail.py with signature: async fetch_detail_html(url, locale, timeout_ms) -> str. Plan headless undetected-chromedriver setup, persistent user data dir, realistic UA, Accept-Language based on locale, small jittered delays, and cookies import; ensure reuse of parse_detail.parse_detail_html.",
-            "status": "pending",
-            "testStrategy": "Design sanity check against existing ingest and parser call sites."
+            "status": "done",
+            "testStrategy": "Design sanity check against existing ingest and parser call sites.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -124,8 +132,9 @@
               3
             ],
             "details": "Implement sync _fetch() using undetected_chromedriver Chrome/ChromeOptions; set --headless=new, --lang=<locale>, persistent user data dir, realistic UA, page load timeout; import cookies if present; add small randomized delay before navigation; return driver.page_source. Expose fetch_detail_html that wraps via await asyncio.to_thread(_fetch).",
-            "status": "pending",
-            "testStrategy": "Unit: monkeypatch _fetch to return fixture HTML; verify wrapper behavior, timeout handling, and exception propagation."
+            "status": "done",
+            "testStrategy": "Unit: monkeypatch _fetch to return fixture HTML; verify wrapper behavior, timeout handling, and exception propagation.",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -135,131 +144,201 @@
               4
             ],
             "details": "Prepare representative HTML fixtures; mock fetch_detail_html; call parse_detail.parse_detail_html and assert fields; optionally add a local-file smoke test guarded by a flag for manual runs.",
-            "status": "pending",
-            "testStrategy": "Unit tests asserting expected parser outputs; optional flagged smoke test."
+            "status": "done",
+            "testStrategy": "Unit tests asserting expected parser outputs; optional flagged smoke test.",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 3,
+        "id": "3",
         "title": "Wire browser details into ingest flow",
         "description": "Replace the `requests` detail path with the new browser-based fetcher behind a selectable strategy, keeping HTTP path as fallback.",
         "details": "- In `app/ingest.py`, introduce `details_strategy` with values `http` (existing) and `browser` (new). Default to `browser` when `--fetch-details` given, per PRD.\n- Limit parallelism via `asyncio.Semaphore(concurrency)` to protect the browser; configurable via CLI/env (e.g., `DETAILS_CONCURRENCY=2`).\n- On errors, record structured failure and continue; accumulate metrics (success/failure counts, avg time per detail).\n- Reuse `parse_detail.parse_detail_html` for both strategies; only swap fetcher implementation.\n- Keep `--details-for-new-only` behavior intact.\n- Update `app/cli.py` help and pass-through to ingest function.",
         "testStrategy": "- Unit: simulate N detail URLs, stub fetchers to fail then succeed; assert retry path, concurrency limit, and result merging into upsert payload.\n- Manual: run `vinted-scraper scrape --fetch-details --details-strategy browser --max-pages 1` and verify details populate.",
         "priority": "high",
         "dependencies": [
-          2
+          "2"
         ],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Pass CLI details options to ingest and support env fallback",
+            "description": "Wire --details-strategy and --details-concurrency from CLI into ingest so runtime selection and limits take effect.",
+            "dependencies": [],
+            "details": "In app/cli.py, update the scrape() call to scrape_and_store to include details_strategy=details_strategy and details_concurrency=details_concurrency. Add an environment fallback (e.g., if not provided, use int(os.getenv('DETAILS_CONCURRENCY', details_concurrency))). Keep existing --details-for-new-only logic that implies --fetch-details. Ensure help text mentions strategy default browser and concurrency option.",
+            "status": "done",
+            "testStrategy": "Run vinted-scraper scrape with --fetch-details --details-strategy http --details-concurrency 3 and confirm values reach ingest (temporary log). Test env fallback: export DETAILS_CONCURRENCY=4 and omit flag; verify 4 is used.",
+            "updatedAt": "2025-10-20T12:39:02.789Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement HTTP details strategy to fetch HTML and reuse parser",
+            "description": "Change the http fallback to fetch raw HTML and parse via parse_detail_html so both strategies share the same parser.",
+            "dependencies": [
+              1
+            ],
+            "details": "In app/ingest.py, add a small async HTTP fetcher using asyncio.to_thread + requests.get with Accept-Language and sensible timeouts. When details_strategy == 'http', fetch HTML and pass it to app/scraper/parse_detail.parse_detail_html. Remove reliance on v.item_details for this branch to keep parsing consistent. Preserve existing proxies and locale handling where applicable.",
+            "status": "done",
+            "testStrategy": "Unit: monkeypatch requests.get to return fixture HTML; assert parse_detail_html is called and expected keys (description, photos, language, shipping_cents) appear. Ensure v.item_details is not invoked for 'http' strategy.",
+            "parentId": "undefined",
+            "updatedAt": "2025-10-20T13:18:18.681Z"
+          },
+          {
+            "id": 3,
+            "title": "Unify detail fetch path with semaphore and driver lifecycle",
+            "description": "Create one strategy-aware fetch_detail_html function protected by asyncio.Semaphore and ensure single driver init/quit.",
+            "dependencies": [
+              2
+            ],
+            "details": "In _scrape_and_store_locale, define semaphore = asyncio.Semaphore(details_concurrency) and a single async fetch_detail_html(url) that branches on details_strategy: 'browser' uses get_html_with_browser with a pre-initialized driver; 'http' uses the new HTTP fetcher. Wrap fetches in the semaphore for both strategies, reuse the same parse_detail_html(html) output, and keep --details-for-new-only unchanged. Ensure driver is created once and quit() at the end if used.",
+            "status": "done",
+            "testStrategy": "Unit: stub browser/http fetchers to sleep and log; process N items and assert max concurrent in-flight fetches never exceed details_concurrency. Verify driver init called once and quit at end when strategy=browser.",
+            "parentId": "undefined",
+            "updatedAt": "2025-10-20T13:19:14.815Z"
+          },
+          {
+            "id": 4,
+            "title": "Add structured detail metrics and robust error handling",
+            "description": "Record per-detail success/failure, duration, and strategy; handle exceptions and continue without crashing the page loop.",
+            "dependencies": [
+              3
+            ],
+            "details": "Introduce a detail_metrics dict with counters (success_count, failure_count) and timing (sum_ms) to compute avg time. Wrap fetch+parse in try/except capturing url, error_type, strategy, and duration_ms; append failures to a list for later reporting. Print per-page and final summary including avg_ms and counts. Ensure DB upsert proceeds with available fields and errors don’t abort the loop.",
+            "status": "done",
+            "testStrategy": "Unit: stub fetcher to fail then succeed; assert failure_count/success_count and that avg time is computed. Confirm loop continues after failures and that merged payload still upserts for successful items.",
+            "parentId": "undefined",
+            "updatedAt": "2025-10-20T13:19:27.273Z"
+          },
+          {
+            "id": 5,
+            "title": "Verify new-only behavior and strategy selection end-to-end",
+            "description": "Confirm --details-for-new-only still gates fetching and both strategies populate details consistently via the shared parser.",
+            "dependencies": [
+              4
+            ],
+            "details": "Run a small ingest locally: vinted-scraper scrape --fetch-details --details-strategy browser --max-pages 1 and repeat with --details-strategy http. Verify parsed fields (description, language, photos, shipping_cents) appear and language detection still runs. Re-run with --details-for-new-only to ensure only unseen URLs trigger detail fetch. Update CLI examples if needed to showcase --details-strategy and --details-concurrency.\n<info added on 2025-10-20T13:09:18.823Z>\nBlocked: HTTP details strategy cannot reuse parse_detail_html because vinted_api_kit only exposes structured item_details, not raw HTML (see app/ingest.py:405–411). Browser strategy correctly calls parse_detail_html(html) (app/ingest.py:405–407). There is an existing HTTP + parse_detail_html pattern in app/postprocess.py (requests.get → parse_detail_html), and cookies warmup exists in app/scraper/session_warmup.py.\n\nUnblock plan specific to this codebase:\n- Add app/scraper/http_detail.py with async fetch_detail_html_http(url, locale, timeout_s=15, use_proxy=True) that:\n  - Loads cookies from cookies.txt if present (written by session_warmup.py).\n  - Uses requests with HEADERS like postprocess.py and Accept-Language derived from locale (e.g., sk-SK,en-US;q=0.8,en;q=0.7).\n  - Applies proxies from env (HTTP_PROXY/HTTPS_PROXY) when use_proxy is true.\n  - Wraps the blocking call via asyncio.to_thread and returns response.text when status_code == 200.\n- In app/ingest.py:\n  - Keep the semaphore (details_concurrency) but branch fetch_details_with_semaphore by strategy:\n    - browser → get_html_with_retry then parse_detail_html(html) (current behavior).\n    - http → fetch_detail_html_http then parse_detail_html(html) instead of v.item_details.\n  - Replace the else branch at 405–411 with the HTTP HTML path so both strategies use the shared parser and produce consistent fields (description, language, photos, shipping_cents).\n  - On non-200 or exception, log and continue with empty details; do not crash.\n- Optional: If vinted_api_kit exposes an internal HTTP client/session that can GET raw pages (e.g., v.client or v._client), prefer that for cookie/proxy reuse; otherwise use requests as above.\n\nAfter implementing, re-run:\n- vinted-scraper scrape --fetch-details --details-strategy browser --max-pages 1\n- vinted-scraper scrape --fetch-details --details-strategy http --max-pages 1\nVerify both populate description, language, photos, shipping_cents and that language detection still runs. Then re-run with --details-for-new-only to confirm gating. Update CLI help in app/cli.py to note that http strategy relies on warmed cookies and may be rate-limited.\n</info added on 2025-10-20T13:09:18.823Z>\n<info added on 2025-10-20T13:16:31.417Z>\nVerification focus (current code behavior): http strategy uses v.item_details for structured data; browser strategy fetches HTML and parses via parse_detail_html. New-only gating is controlled by is_listing_new(session, url) and only triggers detail fetches for unseen URLs.\n\nEnd-to-end steps\n1) Seed database without details (establish existing URLs):\n   vinted-scraper scrape --search-text \"playstation\" --no-proxy --max-pages 1\n   Quick check (SQLite default): sqlite3 vinted.db 'select count(*) from listings where description is not null;'\n   Expectation: 0\n2) Verify new-only gating blocks details for existing items (browser path):\n   vinted-scraper scrape --search-text \"playstation\" --details-for-new-only --details-strategy browser --no-proxy --max-pages 1\n   Confirm existing rows remained without details:\n   sqlite3 vinted.db 'select count(*) from listings where description is not null;'\n   Expectation: still 0 (no detail fetch because no new URLs)\n   Code references: app/cli.py (details_for_new_only implies fetch_details), app/ingest.py (is_listing_new gating)\n3) Verify browser strategy selection + fields on new URLs:\n   Produce unseen URLs by changing locale or query (e.g., add --locale cz or switch --search-text to \"nintendo\")\n   vinted-scraper scrape --search-text \"nintendo\" --details-for-new-only --details-strategy browser --no-proxy --max-pages 1 --details-concurrency 2\n   Validate fields from HTML parsing:\n   sqlite3 vinted.db 'select count(*) from listings where description is not null;'  (should increase)\n   sqlite3 vinted.db 'select count(*) from listings where photos is not null;'      (should increase)\n   sqlite3 vinted.db 'select count(*) from listings where language is not null;'    (set by detect_language_from_item)\n   sqlite3 vinted.db 'select count(*) from listings where shipping_cents is not null;' (often > 0)\n   Code path: app/ingest.py (details_strategy == \"browser\" → get_html_with_browser → parse_detail_html)\n4) Verify http strategy selection + fields on new URLs:\n   Generate another set of unseen URLs (e.g., change locale again or use a different term like \"lego\")\n   vinted-scraper scrape --search-text \"lego\" --details-for-new-only --details-strategy http --no-proxy --max-pages 1\n   Validate fields from API structured details:\n   sqlite3 vinted.db 'select count(*) from listings where description is not null;'  (should increase for new rows)\n   sqlite3 vinted.db 'select count(*) from listings where photos is not null;'      (should increase)\n   sqlite3 vinted.db 'select count(*) from listings where language is not null;'    (set by detect_language_from_item)\n   Note: shipping_cents may be null with http strategy (no HTML parsing)\n   Code path: app/ingest.py (else branch → v.item_details(...).dict(); no parse_detail_html, no browser driver init)\n5) Acceptance criteria\n   - New-only gating: step 2 leaves pre-seeded items without description/photos (no changes); steps 3–4 only enrich truly new URLs.\n   - Strategy routing: browser runs through get_html_with_browser + parse_detail_html; http uses v.item_details without initializing a driver.\n   - Language detection consistently set via app/utils/language.detect_language_from_item across both strategies.\n</info added on 2025-10-20T13:16:31.417Z>",
+            "status": "done",
+            "testStrategy": "Manual: small scrape against 1 page; inspect logs/DB values for details and metrics; verify that switching strategy still yields fields via parse_detail_html and that new-only behavior is respected.",
+            "parentId": "undefined",
+            "updatedAt": "2025-10-20T16:50:57.412Z"
+          }
+        ],
+        "updatedAt": "2025-10-20T16:50:57.412Z"
       },
       {
-        "id": 4,
+        "id": "4",
         "title": "Granular error taxonomy and exponential backoff",
         "description": "Introduce categorized exception handling and a shared exponential backoff utility for both catalog and detail fetch paths.",
         "details": "- Add `app/utils/retry.py` with `async backoff(fn, retries=5, base=0.5, factor=2.0, max_delay=60, jitter=True, retry_on=(TimeoutError, NetworkError, HTTPStatusError, RateLimitError))`.\n- Wrap catalog page fetches and detail fetches with the backoff helper.\n- Preserve existing special-case 403 wait-and-retry flow for Vinted, but use backoff for all other transient errors.\n- Emit structured log entries for each attempt: fields include `attempt`, `next_delay`, `error_type`, `url`, `phase` (catalog|detail).\n- Make `--max-retries` and a new `--retry-base` govern behavior; default sensible values per PRD.",
         "testStrategy": "- Unit: flaky stub that fails N times then succeeds → assert call count and delay pattern; verify jitter bounded.\n- Simulated 403 path: ensure legacy long wait path still triggers; others use backoff.",
         "priority": "high",
         "dependencies": [
-          1
+          "1"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 5,
+        "id": "5",
         "title": "Locale and base URL hardening",
         "description": "Refactor URL/headers generation and ensure scraping works across at least sk, com, and fr locales.",
         "details": "- Consolidate URL building in `app/utils/url.py` to accept `base_url`, `locale`, `categories`, `platform_ids`, `search_text`, extras, and produce stable request URLs.\n- Ensure Accept-Language and UA reflect `--locale`; propagate locale into browser context (if using Playwright) or driver options (UC).\n- Validate differences in `vinted.<tld>/catalog` paths; guard with defaults and allow overrides.\n- Optionally store `locale` on listings; if not present, plan for migration task later (see Task 7).",
         "testStrategy": "- Unit: given parameters, assert the constructed URL matches expected patterns for `.sk`, `.com`, `.fr`.\n- Manual: scrape 1 page in dev with SQLite for each locale flag and confirm non-empty results.",
         "priority": "high",
         "dependencies": [
-          1
+          "1"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 6,
+        "id": "6",
         "title": "Data cleaning and normalization pipeline",
         "description": "Create an idempotent, configurable post-processing step to normalize brands, unify sizes, and extract structured hints from descriptions.",
         "details": "- Implement `app/utils/normalization.py` with pure functions: `normalize_brand(str)->str`, `normalize_size(str)->str|None`, `extract_from_description(str)->dict` (e.g., platform mentions, shipping terms).\n- Add `app/postprocess.py` with `async run_clean(limit=None, source='vinted')` that queries listings and updates normalized fields.\n- CLI: `vinted-scraper clean-data --limit 1000 --source vinted`.\n- Ensure write-back via upsert only touches normalization columns; log before/after when changed.",
         "testStrategy": "- Unit: comprehensive cases for brand/size normalization and description extraction.\n- E2E on sample records: run once, then again, ensuring idempotence and no unintended changes.",
         "priority": "medium",
         "dependencies": [
-          3,
-          5
+          "3",
+          "5"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "DB migration for locale and normalized fields",
         "description": "Extend schema and models to store `locale`, `brand_normalized`, and `size_normalized` required by the cleaning pipeline and analytics.",
         "details": "- Migration SQL in `migrations/`: add columns if not exist: `locale VARCHAR(8)`, `brand_normalized VARCHAR(128)`, `size_normalized VARCHAR(64)` to `vinted.listings`.\n- Update `app/db/models.py` mapped columns and `app/api/schemas.py` to include these as optional fields.\n- Upsert path in `app/ingest.py` should pass through `locale` when known.\n- Backfill script: set `brand_normalized = LOWER(brand)` initial seed where null.",
         "testStrategy": "- Apply migration on dev DB; verify ORM reflects new columns and API responses include them when present.\n- Unit: serialization round-trip through Pydantic includes optional fields.",
         "priority": "medium",
         "dependencies": [
-          6
+          "6"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 8,
+        "id": "8",
         "title": "Expose new options via CLI, API, and UI",
         "description": "Add flags and payload fields for detail strategy and locale; surface cleaning endpoint; minimal UI updates for configs.",
         "details": "- CLI (`app/cli.py`): add `--details-strategy [browser|http]`, `--browser-details` shortcut, concurrency flag, retry base; update help text. Add `clean-data` command.\n- API (`app/api/main.py`, `app/api/schemas.py`): extend `ScrapeConfig*` with `detail_strategy`, `locale`, `base_url`, and optional `details_concurrency`; add `POST /api/clean` (background task) and extend `/api/stats` with coverage metrics (percent listings with description/language).\n- Frontend (`frontend/index.html`): add fields in config form for locale and detail strategy with helper text; show normalized fields in listing table if present.",
         "testStrategy": "- CLI: snapshot of `--help` includes new flags.\n- API: OpenAPI schema shows new fields; create/read config round-trips them; running `POST /api/clean` returns accepted and updates stats.\n- UI: manual smoke test creating a config with new fields.",
         "priority": "medium",
         "dependencies": [
-          3,
-          5,
-          6,
-          7
+          "3",
+          "5",
+          "6",
+          "7"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 9,
+        "id": "9",
         "title": "Observability: structured logs and metrics",
         "description": "Enhance logging and stats to quantify resilience (retries, success rates) and browser vs HTTP effectiveness.",
         "details": "- Add a lightweight logging helper to emit JSON logs when `LOG_JSON=true` in `.env` including `event`, `phase`, `attempt`, `delay_ms`, `error`, `strategy`, `locale`, `url_hash`.\n- Track counters/timers in-memory during runs; extend `/api/stats` to include recent run metrics and cumulative success rates for details by strategy.\n- Optionally write summary to `.taskmaster/reports/task-complexity-report.json` or a new report file after runs.",
         "testStrategy": "- Unit: logger emits required keys; metrics aggregator computes rates correctly.\n- Manual: run scrape; verify stats endpoint reflects retry counts and success ratios; check logs for structured entries.",
         "priority": "low",
         "dependencies": [
-          4,
-          8
+          "4",
+          "8"
         ],
         "status": "pending",
         "subtasks": []
       },
       {
-        "id": 10,
+        "id": "10",
         "title": "Documentation and help updates",
         "description": "Update docs and in-tool help to reflect browser-based details, new retry model, multi-locale support, and cleaning pipeline.",
         "details": "- Update `README.md`, `HELP_REFERENCE.md`, and `CLAUDE.md` with: `--details-strategy` (default browser), locale/base-url guidance, concurrency, backoff, and `clean-data` workflow.\n- Add examples for `sk`, `fr`, `com` locales and performance expectations (browser ~10 items/min; catalog ~24 items/min).\n- Add troubleshooting section for headless browser (dependencies, sandbox flags, GPU issues) and rate-limit guidance.\n- Ensure `PROJECT_SUMMARY.md` and web dashboard texts reference new fields/flows where relevant.",
         "testStrategy": "- Render docs locally and verify links/commands; `vinted-scraper --help` and `vinted-scraper scrape --help` include new options and accurate defaults.",
         "priority": "medium",
         "dependencies": [
-          2,
-          3,
-          4,
-          5,
-          6,
-          8,
-          9
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "8",
+          "9"
         ],
         "status": "pending",
         "subtasks": []
       }
     ],
     "metadata": {
-      "created": "2025-10-19T19:12:39.729Z",
-      "updated": "2025-10-19T20:14:03.231Z",
-      "description": "Tasks for master context"
+      "version": "1.0.0",
+      "lastModified": "2025-10-20T16:50:57.509Z",
+      "taskCount": 10,
+      "completedCount": 3,
+      "tags": [
+        "master"
+      ]
     }
   }
 }

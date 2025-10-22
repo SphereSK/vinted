@@ -19,7 +19,8 @@ dependencies = [
     "requests",
     "beautifulsoup4", # For bs4
     "undetected-chromedriver",
-    "langdetect"
+    "langdetect",
+    "redis>=4.5"
 ]
 
 [project.scripts]

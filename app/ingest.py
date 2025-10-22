@@ -1,18 +1,22 @@
 import asyncio
 import datetime as dt
 import random
-from app.scraper.browser import get_html_with_browser
+import os
 import time
-
+import requests
+from app.scraper.browser import get_html_with_browser, init_driver
 from vinted_api_kit import VintedApi
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-
 from app.db.models import Listing, PriceHistory
 from app.db.session import Session, init_db
 from app.scraper.parse_header import parse_catalog_page
 from app.scraper.parse_detail import parse_detail_html
 from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
+from app.utils.language import detect_language_from_item
+from app.scraper.session_warmup import warmup_vinted_session
+from app.utils.retry import retry_with_backoff
+from app.utils.clean import standardize_brand
 
 def build_catalog_url(base_url: str, search_text: str = None, category=None, platform_id=None, extra=None, order=None) -> str:
     """
@@ -214,13 +218,17 @@ async def mark_old_listings_inactive(session, hours_threshold: int = 48):
 # -----------------------------------------------------
 # Main Scraper Logic
 # -----------------------------------------------------
-@retry_with_backoff(retries=max_retries, initial_delay=5, backoff_factor=2)
 async def search_items_with_retry(v: VintedApi, url: str, per_page: int):
     return await v.search_items(url=url, per_page=per_page)
 
-@retry_with_backoff(retries=max_retries, initial_delay=2, backoff_factor=2)
-async def get_html_with_retry(url: str):
-    return get_html_with_browser(url)
+@retry_with_backoff()
+async def get_html_with_requests(url: str):
+    response = requests.get(url, headers=HEADERS)
+    response.raise_for_status()
+    return response.text
+
+async def get_html_with_retry(url: str, driver=None):
+    return await get_html_with_browser(url, driver=driver)
 
 def with_page(url: str, page: int) -> str:
     """
@@ -250,6 +258,8 @@ async def scrape_and_store(
     extra: list[str] = None,
     order: str = None,
     base_url: str = None,
+    details_strategy: str = "browser",
+    details_concurrency: int = 2,
 ):
     """Fetch catalog items from Vinted, enrich with HTML details, and store in DB.
 
@@ -289,6 +299,8 @@ async def scrape_and_store(
             platform_ids=platform_ids,
             error_wait_minutes=error_wait_minutes,
             max_retries=max_retries,
+            details_strategy=details_strategy,
+            details_concurrency=details_concurrency,
         )
 
 async def _scrape_and_store_locale(
@@ -304,8 +316,16 @@ async def _scrape_and_store_locale(
     platform_ids: list,
     error_wait_minutes: int,
     max_retries: int,
+    details_strategy: str,
+    details_concurrency: int,
 ):
     await init_db()
+
+    # --- Config with env fallbacks ---
+    strategy = details_strategy or os.getenv("DETAILS_STRATEGY", "browser")
+    concurrency = details_concurrency or int(os.getenv("DETAILS_CONCURRENCY", 2))
+
+    print(f"⚙️  Details strategy: {strategy}, Concurrency: {concurrency}")
 
     # --- Warm up session (direct connection only) ---
     print("🔄 Warming up session with headers only...")
@@ -316,11 +336,26 @@ async def _scrape_and_store_locale(
 
     # --- Start scraping session ---
     proxies = {"http": os.environ.get("HTTP_PROXY"), "https": os.environ.get("HTTPS_PROXY")} if use_proxy else None
+    driver = None
+    if fetch_details and strategy == "browser":
+        try:
+            driver = init_driver()
+        except Exception as e:
+            print(f"❌ Failed to initialize browser: {e}")
+            return
+
     async with VintedApi(
         locale=locale,
         proxies=proxies,
         persist_cookies=True,
     ) as v, Session() as session:
+
+        # Dynamically create retry functions with current parameters
+        search_items_with_current_retry = retry_with_backoff(
+            retries=max_retries,
+            initial_delay=error_wait_minutes * 60 / 5, # Convert minutes to seconds, then divide for initial delay
+            backoff_factor=2
+        )(v.search_items)
 
         # --- Main scrape loop ---
         total = 0
@@ -328,6 +363,16 @@ async def _scrape_and_store_locale(
         updated_items = 0
         start_time = time.time()
         page_times = []
+        detail_metrics = {'success': 0, 'failed': 0, 'total_time': 0}
+
+        semaphore = asyncio.Semaphore(details_concurrency)
+
+        async def fetch_details_with_semaphore(item_url):
+            async with semaphore:
+                if strategy == 'browser':
+                    return await get_html_with_retry(item_url, driver=driver)
+                else: # http
+                    return await get_html_with_requests(item_url)
 
         for page in range(1, max_pages + 1):
             page_start = time.time()
@@ -347,7 +392,7 @@ async def _scrape_and_store_locale(
 
             items = None
             try:
-                items = await search_items_with_retry(v, url=url, per_page=per_page)
+                items = await search_items_with_current_retry(url=url, per_page=per_page)
             except Exception as e:
                 print(f"  ! Failed to load page {page} after multiple retries: {e}")
 
@@ -374,8 +419,13 @@ async def _scrape_and_store_locale(
                     details = {}
                     if fetch_item_details:
                         try:
-                            html = await get_html_with_retry(item["url"])
-                            details = parse_detail_html(html)
+                            if details_strategy == 'browser':
+                                html = await fetch_details_with_semaphore(item["url"])
+                                details = parse_detail_html(html)
+                            else: # http
+                                detail_item = await v.item_details(url=item["url"])
+                                if detail_item:
+                                    details = detail_item.dict()
                         except Exception as e:
                             print(f"  ! Error fetching details for {item['url']}: {e}")
 
@@ -384,8 +434,6 @@ async def _scrape_and_store_locale(
                         title=item.get("title", ""),
                         description=details.get("description") or item.get("description", "")
                     )
-
-from app.utils.clean import standardize_brand
 
 # ... (rest of the file)
 
@@ -439,26 +487,40 @@ from app.utils.clean import standardize_brand
 
             await asyncio.sleep(delay)
 
-        # Mark old listings as inactive (not seen in last 48 hours)
-        print("\n🔄 Marking old listings as inactive...")
+    if driver:
+        driver.quit()
+
+    # Mark old listings as inactive (not seen in last 48 hours)
+    print("\n🔄 Marking old listings as inactive...")
+    async with Session() as session:
         inactive_count = await mark_old_listings_inactive(session, hours_threshold=48)
         if inactive_count > 0:
             print(f"   Marked {inactive_count} listing(s) as inactive (not seen in 48+ hours)")
         else:
             print(f"   All listings are up to date")
 
-        # Get final database stats
+    # Get final database stats
+    async with Session() as session:
         total_in_db = await session.scalar(
             select(func.count()).select_from(Listing).where(Listing.is_active == True)
         )
 
-        total_time = time.time() - start_time
-        print(f"\n{'='*60}")
-        print(f"✅ Scraping Complete!")
-        print(f"{ '='*60}")
-        print(f"⏱️  Time: {int(total_time // 60)}m {int(total_time % 60)}s")
-        print(f"📊 Processed: {total} items")
-        print(f"   ✨ New: {new_items} ({new_items/total*100:.1f}%)\n")
-        print(f"   🔄 Updated: {updated_items} ({updated_items/total*100:.1f}%)\n")
-        print(f"💾 Total in DB: {total_in_db} active listings")
-        print(f"{ '='*60}")
+    total_time = time.time() - start_time
+    print(f"\n{'='*60}")
+    print(f"✅ Scraping Complete!")
+    print(f"{'='*60}")
+    print(f"⏱️  Time: {int(total_time // 60)}m {int(total_time % 60)}s")
+    print(f"📊 Processed: {total} items")
+    if total > 0:
+        print(f"   ✨ New: {new_items} ({new_items/total*100:.1f}%)")
+        print(f"   🔄 Updated: {updated_items} ({updated_items/total*100:.1f}%)")
+    else:
+        print(f"   ✨ New: {new_items} (0.0%)")
+        print(f"   🔄 Updated: {updated_items} (0.0%)")
+    if detail_metrics['success'] > 0:
+        avg_detail_time = detail_metrics['total_time'] / detail_metrics['success']
+        print(f"   - Fetched details for {detail_metrics['success']} items (avg: {avg_detail_time:.2f}s/item)")
+    if detail_metrics['failed'] > 0:
+        print(f"   - Failed to fetch details for {detail_metrics['failed']} items")
+    print(f"💾 Total in DB: {total_in_db} active listings")
+    print(f"{'='*60}")
