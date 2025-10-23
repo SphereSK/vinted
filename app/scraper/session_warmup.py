@@ -1,6 +1,9 @@
 import requests
 import os
 import json
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 HEADERS = {
     "User-Agent": (
@@ -21,7 +24,7 @@ def warmup_vinted_session(locale="sk", cookies_file="cookies.txt", use_proxy=Tru
     If blocked, optionally retry with a proxy.
     """
     base_url = f"https://www.vinted.{locale}/"
-    print(f"warming up session for {base_url} …")
+    logger.info(f"warming up session for {base_url} …")
 
     try:
         resp = requests.get(base_url, headers=HEADERS, timeout=15)
@@ -30,34 +33,34 @@ def warmup_vinted_session(locale="sk", cookies_file="cookies.txt", use_proxy=Tru
         if cookies_dict:
             with open(cookies_file, "w") as f:
                 json.dump(cookies_dict, f)
-            print(f"✅ Warmup OK, cookies saved to {cookies_file}")
+            logger.info(f"Warmup OK, cookies saved to {cookies_file}")
         else:
-            print("⚠️  No cookies captured.")
+            logger.warning("No cookies captured.")
         return True
 
     except Exception as e:
-        print(f"⚠️  Direct warmup failed: {e}")
+        logger.warning(f"Direct warmup failed: {e}")
 
         # Only retry with proxies if enabled
         if not use_proxy:
-            print("🚫 Proxy disabled — skipping proxy retry.")
+            logger.info("Proxy disabled — skipping proxy retry.")
             return False
 
         from app.proxies.fetch_and_test import get_working_proxy
         proxy = get_working_proxy()
         if not proxy:
-            print("❌ No working proxy found.")
+            logger.error("No working proxy found.")
             return False
 
-        print(f"🔁 Retrying warmup via proxy {proxy} …")
+        logger.info(f"Retrying warmup via proxy {proxy} …")
         try:
             resp = requests.get(base_url, headers=HEADERS, proxies={"http": proxy, "https": proxy}, timeout=20)
             resp.raise_for_status()
             cookies_dict = resp.cookies.get_dict()
             with open(cookies_file, "w") as f:
                 json.dump(cookies_dict, f)
-            print(f"✅ Proxy warmup success, cookies saved.")
+            logger.info("Proxy warmup success, cookies saved.")
             return True
         except Exception as e2:
-            print(f"❌ Proxy warmup also failed: {e2}")
+            logger.error(f"Proxy warmup also failed: {e2}")
             return False

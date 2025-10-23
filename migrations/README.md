@@ -30,6 +30,8 @@ sqlite3 vinted.db < migrations/002_expand_scrape_configs.sql
 | --- | ------------------------------ | -------------------------------------------- | ---------- |
 | 001 | `001_add_source_column.sql`    | Add source field to track marketplace origin | 2025-10-14 |
 | 002 | `002_expand_scrape_configs.sql` | Extend scrape_configs with CLI/cron options  | 2025-10-20 |
+| 004 | `004_add_taxonomy_tables.sql`  | Add taxonomy master data tables for categories/platforms/conditions/sources | 2025-10-23 |
+| 005 | `005_link_listing_taxonomy.sql` | Link listings to taxonomy master tables via foreign keys | 2025-10-23 |
 
 ## Creating New Migrations
 

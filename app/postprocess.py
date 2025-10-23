@@ -8,6 +8,7 @@ from app.db.models import Listing
 from app.db.session import Session, init_db
 from app.scraper.parse_detail import parse_detail_html
 from app.utils.language import detect_language_from_item
+from app.utils.logging import get_logger
 
 
 # -----------------------------------------------------
@@ -27,6 +28,7 @@ async def process_language_detection(
     limit: int = None,
     delay: float = 1.5,
     source: str = None,
+    logger = None,
 ):
     """
     Post-process existing listings to detect language.
@@ -39,6 +41,9 @@ async def process_language_detection(
         delay: Delay between requests in seconds (default: 1.5)
         source: Filter by source (e.g., 'vinted', 'bazos')
     """
+    if not logger:
+        logger = get_logger(__name__)
+
     await init_db()
 
     async with Session() as session:
@@ -58,11 +63,11 @@ async def process_language_detection(
         listings = result.scalars().all()
 
         if not listings:
-            print("✅ No listings need language detection")
+            logger.info("No listings need language detection")
             return
 
         total = len(listings)
-        print(f"📝 Processing {total} listing(s) for language detection...")
+        logger.info(f"Processing {total} listing(s) for language detection...")
 
         processed = 0
         errors = 0
@@ -77,11 +82,11 @@ async def process_language_detection(
                     remaining = total - idx + 1
                     eta_seconds = avg_time * remaining
                     eta_str = f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
-                    print(f"\n[{idx}/{total}] ~{eta_str} remaining")
+                    logger.info(f"[{idx}/{total}] ~{eta_str} remaining")
                 else:
-                    print(f"\n[{idx}/{total}]")
+                    logger.info(f"[{idx}/{total}]")
 
-                print(f"  Fetching: {listing.url}")
+                logger.info(f"Fetching: {listing.url}")
 
                 # Fetch HTML
                 response = requests.get(
@@ -91,7 +96,7 @@ async def process_language_detection(
                 )
 
                 if response.status_code != 200:
-                    print(f"  ⚠️  HTTP {response.status_code}, skipping")
+                    logger.warning(f"HTTP {response.status_code}, skipping")
                     errors += 1
                     continue
 
@@ -117,17 +122,17 @@ async def process_language_detection(
                     await session.execute(stmt)
                     await session.commit()
 
-                    print(f"  ✓ Language: {detected_lang}")
+                    logger.info(f"Language: {detected_lang}")
                     processed += 1
                 else:
-                    print(f"  ⚠️  Could not detect language")
+                    logger.warning("Could not detect language")
                     errors += 1
 
                 # Delay between requests
                 await asyncio.sleep(delay + random.uniform(0, 0.5))
 
             except Exception as e:
-                print(f"  ❌ Error: {e}")
+                logger.error(f"Error: {e}")
                 errors += 1
                 await session.rollback()
                 continue
@@ -135,9 +140,7 @@ async def process_language_detection(
         elapsed = time.time() - start_time
         elapsed_str = f"{int(elapsed // 60)}m {int(elapsed % 60)}s"
 
-        print(f"\n{'='*60}")
-        print(f"✅ Completed in {elapsed_str}")
-        print(f"   Processed: {processed}")
-        print(f"   Errors: {errors}")
-        print(f"   Total: {total}")
-        print(f"{'='*60}")
+        logger.info("Completed in %s", elapsed_str)
+        logger.info(f"Processed: {processed}")
+        logger.info(f"Errors: {errors}")
+        logger.info(f"Total: {total}")

@@ -1,0 +1,9 @@
+/home/datament/project/vinted/logs/cron.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 644 datament datament
+}

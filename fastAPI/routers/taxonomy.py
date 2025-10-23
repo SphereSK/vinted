@@ -1,9 +1,16 @@
-"""Taxonomy endpoints (categories, platforms)."""
+"""Taxonomy endpoints (categories, platforms, conditions, sources)."""
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends
 
-from app.api.schemas import CategoryResponse
-from app.utils.categories import list_common_categories, list_video_game_platforms
-from fastAPI.dependencies import require_api_key
+from app.api.schemas import CategoryResponse, ConditionResponse, SourceResponse
+from app.db.models import (
+    CategoryOption,
+    PlatformOption,
+    ConditionOption,
+    SourceOption,
+)
+from fastAPI.dependencies import get_db, require_api_key
 
 router = APIRouter(
     prefix="/api",
@@ -13,20 +20,48 @@ router = APIRouter(
 
 
 @router.get("/categories", response_model=list[CategoryResponse])
-async def list_categories() -> list[CategoryResponse]:
-    """Return available categories."""
-    categories = list_common_categories()
-    return [
-        CategoryResponse(id=int(cat_id), name=name)
-        for cat_id, name in categories.items()
-    ]
+async def list_categories(db: AsyncSession = Depends(get_db)) -> list[CategoryResponse]:
+    """Return available categories from the master data table."""
+    records = (
+        await db.execute(
+        select(CategoryOption).order_by(CategoryOption.name.asc())
+        )
+    ).scalars().all()
+    return [CategoryResponse(id=row.id, name=row.name) for row in records]
 
 
 @router.get("/platforms", response_model=list[CategoryResponse])
-async def list_platforms() -> list[CategoryResponse]:
-    """Return available platforms."""
-    platforms = list_video_game_platforms()
-    return [
-        CategoryResponse(id=int(plat_id), name=name)
-        for plat_id, name in platforms.items()
-    ]
+async def list_platforms(db: AsyncSession = Depends(get_db)) -> list[CategoryResponse]:
+    """Return available platforms from the master data table."""
+    records = (
+        await db.execute(
+        select(PlatformOption).order_by(PlatformOption.name.asc())
+        )
+    ).scalars().all()
+    return [CategoryResponse(id=row.id, name=row.name) for row in records]
+
+
+@router.get("/conditions", response_model=list[ConditionResponse])
+async def list_conditions(
+    db: AsyncSession = Depends(get_db),
+) -> list[ConditionResponse]:
+    """Return canonical condition options."""
+    records = (
+        await db.execute(
+            select(ConditionOption).order_by(ConditionOption.label.asc())
+        )
+    ).scalars().all()
+    return [ConditionResponse(id=row.id, code=row.code, label=row.label) for row in records]
+
+
+@router.get("/sources", response_model=list[SourceResponse])
+async def list_sources(
+    db: AsyncSession = Depends(get_db),
+) -> list[SourceResponse]:
+    """Return canonical source options."""
+    records = (
+        await db.execute(
+            select(SourceOption).order_by(SourceOption.label.asc())
+        )
+    ).scalars().all()
+    return [SourceResponse(id=row.id, code=row.code, label=row.label) for row in records]

@@ -5,47 +5,10 @@ import asyncio
 from vinted_api_kit import VintedApi
 
 
-# Common category IDs for reference (Slovakia marketplace)
-COMMON_CATEGORIES = {
-    # Electronics & Gaming
-    2994: "Electronics",
-    3026: "Video Games",
-    1953: "Computers",
+from app.data.taxonomy import MASTER_CATEGORIES, MASTER_PLATFORMS
 
-    # Fashion
-    16: "Women's Clothing",
-    18: "Men's Clothing",
-    12: "Kids & Baby",
-
-    # Home & Lifestyle
-    1243: "Home",
-    5: "Entertainment",
-}
-
-# Video game platform IDs (used with video_game_platform_ids parameter)
-VIDEO_GAME_PLATFORMS = {
-    1281: "PlayStation 5",
-    1280: "PlayStation 4",
-    1279: "PlayStation 3",
-    1278: "PlayStation 2",
-    1277: "PlayStation 1",
-    1286: "PlayStation Portable (PSP)",
-    1287: "PlayStation Vita",
-    1282: "Xbox Series X/S",
-    1283: "Xbox One",
-    1284: "Xbox 360",
-    1285: "Xbox",
-    1288: "Nintendo Switch",
-    1289: "Nintendo Wii U",
-    1290: "Nintendo Wii",
-    1291: "Nintendo DS",
-    1292: "Nintendo 3DS",
-    1293: "Nintendo GameCube",
-    1294: "Nintendo 64",
-    1295: "Game Boy",
-    1296: "Sega",
-    1297: "PC Gaming",
-}
+COMMON_CATEGORIES = MASTER_CATEGORIES
+VIDEO_GAME_PLATFORMS = MASTER_PLATFORMS
 
 
 async def discover_categories(search_text: str, locale: str = "sk"):

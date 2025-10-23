@@ -32,14 +32,14 @@ The application loads environment variables from the repository-level `.env`, so
 
 ### Scheduler configuration
 - `SCRAPER_WORKDIR` (default: project root) controls the `cd` prefix used when building cron commands.
-- `SCRAPER_COMMAND` (default: `vinted-scraper scrape`) defines the CLI invoked by cron jobs.
+- `SCRAPER_COMMAND` overrides the executable used by cron jobs. By default it runs `python -m app.cli scrape` using the same interpreter that loaded the API, so no extra PATH juggling is required. Set `SCRAPER_PYTHON` if the scraper should execute under a different interpreter.
 - `SCRAPER_USE_PROXY` (default: `false`) toggles whether `--no-proxy` is appended to generated commands.
 - `SCRAPER_CRON_COMMENT` (default: `vinted-scraper`) prefixes cron job comments so they can be listed/removed via the API.
 - `/api/cron/build` accepts a payload mirroring scrape parameters and returns the exact command string cron would execute, plus the optional schedule supplied by the caller. Manual scrapes triggered via `/api/configs/{id}/run` reuse the same command builder under the hood, execute it asynchronously, and publish progress through Redis (`config_status`) and the `last_run_*` metadata fields.
 - Scrape configs accept an optional `extra_args` list; any entries are appended to the generated CLI command when cron jobs are synced.
 - Scrape configs expose the same knobs as the CLI (`order`, `extra`/-e filters, `--locale`, `--details-for-new-only`, `--error-wait`, `--max-retries`, `--base-url`, `--details-strategy`, `--details-concurrency`, proxy toggle), and `/api/cron/build` mirrors those fields when composing commands.
 - `SCRAPER_EXTRA_ARG_MAX_LENGTH` (default: `128`) limits the length of each extra CLI token; allowed characters include alphanumerics plus `. _ - : @ % + = / , [ ] & ?`.
-- `healthcheck_ping_url` (per config) automatically pings Healthchecks.io: `/start` is sent before a cron run, the base URL on success, and `/fail` on errors. Global tuning knobs include `SCRAPER_HEALTHCHECK_TIMEOUT` (seconds, default `10`) and `SCRAPER_HEALTHCHECK_RETRIES` (default `3`).
+- `healthcheck_ping_url` (per config) automatically pings Healthchecks.io: the base URL is contacted on success and `/fail` on errors. Global tuning knobs include `SCRAPER_HEALTHCHECK_TIMEOUT` (seconds, default `10`) and `SCRAPER_HEALTHCHECK_RETRIES` (default `3`).
 
 ## Authentication
 - Set `FASTAPI_API_KEY` in `.env` to require a static API key for all `/api/*` endpoints (header name defaults to `X-API-Key`).

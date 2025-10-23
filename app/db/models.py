@@ -13,6 +13,52 @@ class Base(DeclarativeBase):
     pass
 
 
+class CategoryOption(Base):
+    __tablename__ = "category_options"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+
+    __table_args__ = (
+        {"schema": settings.schema} if settings.database_url.startswith("postgresql") else {},
+    )
+
+
+class PlatformOption(Base):
+    __tablename__ = "platform_options"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+
+    __table_args__ = (
+        {"schema": settings.schema} if settings.database_url.startswith("postgresql") else {},
+    )
+
+
+class ConditionOption(Base):
+    __tablename__ = "condition_options"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    __table_args__ = (
+        {"schema": settings.schema} if settings.database_url.startswith("postgresql") else {},
+    )
+
+
+class SourceOption(Base):
+    __tablename__ = "source_options"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    label: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    __table_args__ = (
+        {"schema": settings.schema} if settings.database_url.startswith("postgresql") else {},
+    )
+
+
 class Listing(Base):
     __tablename__ = "listings"
 
@@ -62,6 +108,28 @@ class Listing(Base):
     prices: Mapped[List["PriceHistory"]] = relationship(
         back_populates="listing", cascade="all, delete-orphan"
     )
+
+    condition_option_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(
+            f"{settings.schema}.condition_options.id"
+            if settings.database_url.startswith("postgresql")
+            else "condition_options.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+    source_option_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey(
+            f"{settings.schema}.source_options.id"
+            if settings.database_url.startswith("postgresql")
+            else "source_options.id",
+            ondelete="SET NULL",
+        ),
+        nullable=True,
+    )
+
+    condition_option: Mapped[Optional[ConditionOption]] = relationship(lazy="joined")
+    source_option: Mapped[Optional[SourceOption]] = relationship(lazy="joined")
 
     __table_args__ = (
         UniqueConstraint("url", name="uq_listings_url"),

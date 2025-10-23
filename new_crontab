@@ -1,0 +1,53 @@
+# Edit this file to introduce tasks to be run by cron.
+#
+# Each task to run has to be defined through a single line
+# indicating with different fields when the task will be run
+# and what command to run for the task
+#
+# To define the time you can provide concrete values for
+# minute (m), hour (h), day of month (dom), month (mon),
+# and day of week (dow) or use '*' in these fields (for 'any').
+#
+# Notice that tasks will be started based on the cron's system
+# daemon's notion of time and timezones.
+#
+# Output of the crontab jobs (including errors) is sent through
+# email to the user the crontab file belongs to (unless redirected).
+#
+# For example, you can run a backup of all your user accounts
+# at 5 a.m every week with:
+# 0 5 * * 1 tar -zcf /var/backups/home.tgz /home/
+#
+# For more information see the manual pages of crontab(5) and cron(8)
+#
+# m h  dom mon dow   command
+# Run Python script to save stock data and notify upon completion
+MAILTO=luihnat@gmail.com
+# Uncomment if needed
+# 0 */4 * * * /usr/bin/python3 /home/academiqa/project/datament/python_script/cron/save_stock_date_missing.py 2>&1 | msmtp -a default luihnat@gmail.com
+# Run main update for stock data every 4 hours
+# Uncomment if needed
+# 0 */4 * * * /usr/bin/python3 /home/academiqa/project/datament/python_script/main_update_new_automated.py 2>&1 | msmtp -a default luihnat@gmail.com
+# Run daily stock update at 4:05 AM, 6:05 PM, and 10:05 PM, notify via email
+# 5 4,18,22 * * * /usr/bin/python3 /home/datament/project/datament/python_script/main_update_dailyV5.py 2>&1 | msmtp -a default luihnat@gmail.com
+# 5 4,18,22 * * * /usr/bin/python3 /home/datament/project/datament/python_script/main_update_dailyV5.py 2>&1 | sed "1iFrom: GuruViz - cron  <no-reply@guruviz.com>\nSubject: Daily Update Status\n" | msmtp -a default luihnat@example.com
+# 40 4,18,21,22 * * * /home/datament/project/datament/python_script/cron/update_db_cron.sh 2>&1 | sed "1iFrom: GuruViz - cron <no-reply@guruviz.com>\nSubject: Daily Update\n" | msmtp -a default luihnat@gmail.com
+# 5 4,9,18,22 * * * /home/datament/project/datament/python_script/cron/update_db_cron.sh 2>&1 | sed "1iFrom: GuruViz - cron <no-reply@guruviz.com>\nSubject: Daily Update v6\n" | msmtp -a default luihnat@gmail.com
+# 15 4,9,18,22 * * * /home/datament/project/datament/python_script/cron/update_db_cron.sh
+# Run IPO calendar fetch every 2 days at 1:00 AM, notify via email
+# 0 1 */2 * * /usr/bin/python3 /home/datament/project/datament/python_script/cron/fin_hub_ipo_fetch.py 2>&1 | msmtp -a default luihnat@gmail.com
+# 0 1 */2 * * /usr/bin/python3 /home/datament/project/datament/python_script/cron/fin_hub_ipo_fetch.py 2>&1 | sed "1iFrom: GuruViz - cron <no-reply@guruviz.com>\nSubject: Fin IPO Fetch\n" | msmtp -a default luihnat@gmail.com
+#healtcheck.io
+# IPO finhub
+# 0 1 */2 * * /usr/bin/python3 /home/datament/project/datament/python_script/cron/fin_hub_ipo_fetch.py && curl -fsS --retry 3 https://hc-ping.com/e8395193-b186-4c98-a339-86a8ab089a31 > /dev/null
+# nasdaq Dividends
+# 5 5,17 * * * /usr/bin/python3 /home/datament/project/datament/python_script/components/enhacement/nasdaqDividendFetch.py && curl -fsS --retry 3 https://hc-ping.com/c811a0a3-19fb-44fa-8bc7-02caa40ecb33 > /dev/null
+# Twitter, Reddit, Google trends
+# 0 8,14,22 * * * /usr/bin/python3 /home/datament/project/datament/trend_fetcher/ticker_trends_app.py --days 30 && curl -fsS --retry 3 https://hc-ping.com/5834a856-0671-46af-b721-dabc59e04bd0 > /dev/null
+# Stock Daily Check
+# 0 4,10,16,22 * * * /usr/bin/python3 /home/datament/project/datament/finance_data_fetcher/yfinance/main.py --period 5d --log-level INFO --cron skip && curl -fsS --retry 3 https://hc-ping.com/338c34fb-f2bd-439e-aebc-dbf044205847 > /dev/null
+# 0 4,10,16,22 * * * /usr/bin/python3 /home/datament/project/datament/_jobs/run_automatedv6.sh && curl -fsS --retry 3 https://hc-ping.com/338c34fb-f2bd-439e-aebc-dbf044205847
+# Check and kill long-running processes every 2 hours
+# 0 */2 * * * /home/datament/project/datament/_jobs/check_and_kill_automated_v6.sh
+#
+0 0 * * * /home/datament/project/vinted/scripts/log_rotator.sh

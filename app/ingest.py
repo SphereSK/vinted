@@ -185,7 +185,7 @@ async def is_listing_new(session, url: str) -> bool:
     return result == 0
 
 
-async def mark_old_listings_inactive(session, hours_threshold: int = 48):
+async def mark_old_listings_inactive(session, logger, hours_threshold: int = 48):
     """
     Mark listings as inactive if they haven't been seen in the last N hours.
 
@@ -211,6 +211,9 @@ async def mark_old_listings_inactive(session, hours_threshold: int = 48):
 
     result = await session.execute(stmt)
     await session.commit()
+
+    if result.rowcount > 0:
+        logger.info(f"Marked {result.rowcount} listing(s) as non-active.", extra={"status": "non-active"})
 
     return result.rowcount
 
@@ -244,6 +247,7 @@ def with_page(url: str, page: int) -> str:
 
 async def scrape_and_store(
     search_text: str,
+    logger,
     max_pages: int = 5,
     per_page: int = 24,
     delay: float = 1.0,
@@ -268,9 +272,7 @@ async def scrape_and_store(
         max_retries: Maximum number of retries per page on 403 errors (default: 3)
     """
     for locale in locales:
-        print(f"\n\n{'='*60}")
-        print(f"Scraping locale: {locale}")
-        print(f"{'='*60}")
+        logger.info(f"Scraping locale: {locale}")
 
         if base_url:
             current_base_url = base_url
@@ -301,6 +303,7 @@ async def scrape_and_store(
             max_retries=max_retries,
             details_strategy=details_strategy,
             details_concurrency=details_concurrency,
+            logger=logger,
         )
 
 async def _scrape_and_store_locale(
@@ -318,6 +321,7 @@ async def _scrape_and_store_locale(
     max_retries: int,
     details_strategy: str,
     details_concurrency: int,
+    logger,
 ):
     await init_db()
 
@@ -325,14 +329,14 @@ async def _scrape_and_store_locale(
     strategy = details_strategy or os.getenv("DETAILS_STRATEGY", "browser")
     concurrency = details_concurrency or int(os.getenv("DETAILS_CONCURRENCY", 2))
 
-    print(f"⚙️  Details strategy: {strategy}, Concurrency: {concurrency}")
+    logger.info(f"Details strategy: {strategy}, Concurrency: {concurrency}")
 
     # --- Warm up session (direct connection only) ---
-    print("🔄 Warming up session with headers only...")
+    logger.info("Warming up session with headers only...")
     try:
         warmup_vinted_session(locale=locale, use_proxy=use_proxy)
     except Exception as e:
-        print(f"⚠️  Warmup failed: {e}, continuing anyway...")
+        logger.warning(f"Warmup failed: {e}, continuing anyway...")
 
     # --- Start scraping session ---
     proxies = {"http": os.environ.get("HTTP_PROXY"), "https": os.environ.get("HTTPS_PROXY")} if use_proxy else None
@@ -341,7 +345,7 @@ async def _scrape_and_store_locale(
         try:
             driver = init_driver()
         except Exception as e:
-            print(f"❌ Failed to initialize browser: {e}")
+            logger.error(f"Failed to initialize browser: {e}")
             return
 
     async with VintedApi(
@@ -386,18 +390,18 @@ async def _scrape_and_store_locale(
                 eta_str = f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
                 elapsed = time.time() - start_time
                 elapsed_str = f"{int(elapsed // 60)}m {int(elapsed % 60)}s"
-                print(f"\n=== Page {page}/{max_pages} === [{total} items, {elapsed_str} elapsed, ~{eta_str} remaining]")
+                logger.info(f"Page {page}/{max_pages} - {total} items, {elapsed_str} elapsed, ~{eta_str} remaining")
             else:
-                print(f"\n=== Page {page}/{max_pages} === ")
+                logger.info(f"Page {page}/{max_pages}")
 
             items = None
             try:
                 items = await search_items_with_current_retry(url=url, per_page=per_page)
             except Exception as e:
-                print(f"  ! Failed to load page {page} after multiple retries: {e}")
+                logger.error(f"Failed to load page {page} after multiple retries: {e}")
 
             if not items:
-                print(f"Page {page}: no items found, stopping.")
+                logger.warning("No items found on page, stopping.")
                 break
 
             page_item_count = 0
@@ -427,7 +431,7 @@ async def _scrape_and_store_locale(
                                 if detail_item:
                                     details = detail_item.dict()
                         except Exception as e:
-                            print(f"  ! Error fetching details for {item['url']}: {e}")
+                            logger.error(f"Error fetching details for {item['url']}: {e}")
 
                     # Detect language from title and description
                     detected_lang = detect_language_from_item(
@@ -464,18 +468,17 @@ async def _scrape_and_store_locale(
                     if was_new:
                         new_items += 1
                         page_new_count += 1
-                        status_icon = "✨"
+                        logger.info(f"{item.get('title')} | {item.get('price')} {item.get('currency')}", extra={"status": "new"})
                     else:
                         updated_items += 1
                         page_updated_count += 1
-                        status_icon = "🔄"
+                        logger.info(f"{item.get('title')} | {item.get('price')} {item.get('currency')}", extra={"status": "updated"})
 
-                    print(f"{status_icon} {item.get('title')} | {item.get('price')} {item.get('currency')}")
                     total += 1
                     page_item_count += 1
 
                 except Exception as e:
-                    print(f"  ! DB error for {item.get('url')}: {e}")
+                    logger.error(f"DB error for {item.get('url')}: {e}")
                     await session.rollback()  # Reset transaction state to continue processing other items
 
                 await asyncio.sleep(delay + random.uniform(0, 0.5))
@@ -483,7 +486,7 @@ async def _scrape_and_store_locale(
             # Track page timing
             page_elapsed = time.time() - page_start
             page_times.append(page_elapsed)
-            print(f"  ✓ Page {page} complete: {page_item_count} items ({page_new_count} new, {page_updated_count} updated) in {page_elapsed:.1f}s")
+            logger.info(f"Page {page} complete: {page_item_count} items ({page_new_count} new, {page_updated_count} updated) in {page_elapsed:.1f}s")
 
             await asyncio.sleep(delay)
 
@@ -491,13 +494,13 @@ async def _scrape_and_store_locale(
         driver.quit()
 
     # Mark old listings as inactive (not seen in last 48 hours)
-    print("\n🔄 Marking old listings as inactive...")
+    logger.info("Marking old listings as inactive...")
     async with Session() as session:
-        inactive_count = await mark_old_listings_inactive(session, hours_threshold=48)
+        inactive_count = await mark_old_listings_inactive(session, logger, hours_threshold=48)
         if inactive_count > 0:
-            print(f"   Marked {inactive_count} listing(s) as inactive (not seen in 48+ hours)")
+            logger.info(f"Marked {inactive_count} listing(s) as inactive (not seen in 48+ hours)")
         else:
-            print(f"   All listings are up to date")
+            logger.info("All listings are up to date")
 
     # Get final database stats
     async with Session() as session:
@@ -506,21 +509,18 @@ async def _scrape_and_store_locale(
         )
 
     total_time = time.time() - start_time
-    print(f"\n{'='*60}")
-    print(f"✅ Scraping Complete!")
-    print(f"{'='*60}")
-    print(f"⏱️  Time: {int(total_time // 60)}m {int(total_time % 60)}s")
-    print(f"📊 Processed: {total} items")
+    logger.info("Scraping Complete!")
+    logger.info(f"Time: {int(total_time // 60)}m {int(total_time % 60)}s")
+    logger.info(f"Processed: {total} items")
     if total > 0:
-        print(f"   ✨ New: {new_items} ({new_items/total*100:.1f}%)")
-        print(f"   🔄 Updated: {updated_items} ({updated_items/total*100:.1f}%)")
+        logger.info(f"New: {new_items} ({new_items/total*100:.1f}%)")
+        logger.info(f"Updated: {updated_items} ({updated_items/total*100:.1f}%)")
     else:
-        print(f"   ✨ New: {new_items} (0.0%)")
-        print(f"   🔄 Updated: {updated_items} (0.0%)")
+        logger.info("New: 0 (0.0%)")
+        logger.info("Updated: 0 (0.0%)")
     if detail_metrics['success'] > 0:
         avg_detail_time = detail_metrics['total_time'] / detail_metrics['success']
-        print(f"   - Fetched details for {detail_metrics['success']} items (avg: {avg_detail_time:.2f}s/item)")
+        logger.info(f"Fetched details for {detail_metrics['success']} items (avg: {avg_detail_time:.2f}s/item)")
     if detail_metrics['failed'] > 0:
-        print(f"   - Failed to fetch details for {detail_metrics['failed']} items")
-    print(f"💾 Total in DB: {total_in_db} active listings")
-    print(f"{'='*60}")
+        logger.warning(f"Failed to fetch details for {detail_metrics['failed']} items")
+    logger.info(f"Total in DB: {total_in_db} active listings")

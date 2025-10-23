@@ -15,7 +15,6 @@ The Vinted repo contains scraper logic but no deployed service or UI yet. Codex7
 - Database dependency wiring reuses the async engine defined in `app.db.session`.
 - Environment variables from the repository `.env` file are loaded automatically when the FastAPI app starts.
 - `frontend/` delivers a TypeScript Next.js 15 UI (Tailwind + shadcn/ui) with dashboard metrics, listings explorer, and a scrape-config manager (CRUD + manual run + status polling via Redis).
-- `test/test_fastapi_api.py` covers stats, listings, and config APIs against a temporary SQLite database with mocked Redis/scraper integrations.
 
 ## Database Snapshot
 - `listings`: core catalogue data (pricing fields, status flags, seller metadata, category/platform IDs, timestamps).
@@ -33,13 +32,12 @@ The Vinted repo contains scraper logic but no deployed service or UI yet. Codex7
 - Wire these handlers to the scraper/data layer under `app/` (import models, DB helpers, scheduler utilities). If interfaces are missing, extend `app/` instead of duplicating logic inside `fastAPI/`.
 
 ## Frontend Mission (`frontend/`)
-1. Ask Codex7 (shadncui) MCP to scaffold a Next.js or Vite + React project with shadcn/ui styling.
+1. Ask Codex7 (shadncui) MCP to scaffold a Next.js + React project with shadcn/ui styling.
 2. Implement the four feature areas spelled out in `WEBUI_README.md`:
    - Dashboard cards fed by `/api/stats`.
    - Listings table with filters, pagination, price trend indicators.
    - Scrape configuration CRUD flow with optimistic updates.
    - Cron job list + manual sync control.
-3. Produce static assets (e.g., `npm run build && npm run export` or Vite’s `dist/`) consumable by the FastAPI service.
 
 ## Codex7 MCP Setup
 - `.mcp.json` should already declare the `codex7-shadncui` server; verify the entry rather than re-adding it.

@@ -41,6 +41,13 @@ class ListingResponse(ListingBase):
     is_active: bool
     previous_price_cents: Optional[int] = None
     price_change: Optional[str] = None  # "up", "down", "same"
+    category_name: Optional[str] = None
+    platform_names: Optional[list[str]] = None
+    condition_option_id: Optional[int] = None
+    condition_code: Optional[str] = None
+    condition_label: Optional[str] = None
+    source_option_id: Optional[int] = None
+    source_label: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -57,6 +64,10 @@ class ListingListResponse(BaseModel):
     page_size: int
     has_next: bool
     available_currencies: list[str] = Field(default_factory=list)
+    available_conditions: list["ConditionResponse"] = Field(default_factory=list)
+    available_category_ids: list[int] = Field(default_factory=list)
+    available_platform_ids: list[int] = Field(default_factory=list)
+    available_sources: list["SourceResponse"] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -334,6 +345,18 @@ class ScrapeConfigResponse(BaseModel):
 class CategoryResponse(BaseModel):
     id: int
     name: str
+
+
+class ConditionResponse(BaseModel):
+    id: int
+    code: str
+    label: str
+
+
+class SourceResponse(BaseModel):
+    id: int
+    code: str
+    label: str
 
 
 # Stats schemas

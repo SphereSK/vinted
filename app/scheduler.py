@@ -1,11 +1,10 @@
-"""Cron scheduler for automated scraping tasks."""
-from __future__ import annotations
-
 import asyncio
 import os
 import re
 import shlex
 from pathlib import Path
+import sys
+import requests
 from typing import Optional, Sequence
 from urllib.parse import urlparse
 
@@ -16,23 +15,33 @@ from app.db.models import ScrapeConfig
 from app.db.session import Session, init_db
 
 PROJECT_ROOT = Path(os.getenv("SCRAPER_WORKDIR", Path(__file__).resolve().parents[1]))
-SCRAPER_COMMAND = os.getenv("SCRAPER_COMMAND", "vinted-scraper scrape")
+SCRAPER_COMMAND = os.getenv("SCRAPER_COMMAND")
+if not SCRAPER_COMMAND:
+    python_executable = os.getenv("SCRAPER_PYTHON", sys.executable)
+    SCRAPER_COMMAND = f"{python_executable} -m app.cli scrape"
 DEFAULT_USE_PROXY = os.getenv("SCRAPER_USE_PROXY", "false").lower() in {"1", "true", "yes"}
 CRON_COMMENT_PREFIX = os.getenv("SCRAPER_CRON_COMMENT", "vinted-scraper")
 MAX_EXTRA_ARG_LENGTH = int(os.getenv("SCRAPER_EXTRA_ARG_MAX_LENGTH", "128"))
-SAFE_EXTRA_ARG_PATTERN = re.compile(r"^[A-Za-z0-9._:@%+=/,\-\[\]&?]+$")
-VALID_ORDERS = {"newest_first", "price_low_to_high", "price_high_to_low"}
+SAFE_EXTRA_ARG_PATTERN = re.compile(r"^[A-Za-z0-9._:@%+=/,\[\]&?]+$")
+VALID_ORDERS = {"newest_first", "price_low_to_high", "price_high_to_to"}
 VALID_DETAIL_STRATEGIES = {"browser", "http"}
 LOCALE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{2,10}$")
 HEALTHCHECK_TIMEOUT = int(os.getenv("SCRAPER_HEALTHCHECK_TIMEOUT", "10"))
 HEALTHCHECK_RETRIES = int(os.getenv("SCRAPER_HEALTHCHECK_RETRIES", "3"))
 HEALTHCHECK_START_SUFFIX = os.getenv("SCRAPER_HEALTHCHECK_START_SUFFIX", "/start")
 HEALTHCHECK_FAIL_SUFFIX = os.getenv("SCRAPER_HEALTHCHECK_FAIL_SUFFIX", "/fail")
+LOG_FILE = PROJECT_ROOT / "logs" / "cron.log"
 
 
 def _quote(value: object) -> str:
     return shlex.quote(str(value))
 
+
+def clear_redis_cache():
+    try:
+        requests.post("http://localhost:8000/api/listings/cache/clear")
+    except requests.exceptions.RequestException as e:
+        print(f"Could not clear redis cache: {e}")
 
 def validate_cron_expression(expression: str) -> str:
     """Validate a standard 5-field cron expression."""
@@ -91,9 +100,7 @@ def sanitize_locales(locales: Optional[Sequence[str]]) -> list[str]:
         if not value:
             raise ValueError("Locale values cannot be empty")
         if not LOCALE_PATTERN.fullmatch(value):
-            raise ValueError(
-                f"Locale '{value}' is invalid; expected 2-10 alphanumeric characters optionally containing '-' or '_'"
-            )
+            raise ValueError(f"Invalid locale: {value}")
         cleaned.append(value)
     return cleaned
 
@@ -168,12 +175,15 @@ def build_scrape_command(
     extra_args: Optional[Sequence[str]] = None,
     workdir: Optional[Path | str] = None,
     healthcheck_ping_url: Optional[str] = None,
+    config_id: Optional[int] = None,
 ) -> str:
     """
     Construct the CLI command used to run a scrape job.
 
     Parameters mirror the ScrapeConfig attributes and allow optional overrides.
     """
+
+    clear_redis_cache()
 
     tokens = shlex.split(SCRAPER_COMMAND)
     if not tokens:
@@ -239,34 +249,28 @@ def build_scrape_command(
     for arg in safe_extra_args:
         tokens.extend(shlex.split(arg))
 
+    if config_id is not None:
+        tokens.extend(["--config-id", str(config_id)])
+
     command = " ".join(_quote(token) for token in tokens)
     cwd = Path(workdir) if workdir else PROJECT_ROOT
+    log_dir = PROJECT_ROOT / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / "cron.log"
+
+    # Redirect output to log file
+    command_with_logging = f"{command} >> {log_file} 2>&1"
 
     if healthcheck_ping_url:
         sanitized_ping = validate_base_url(healthcheck_ping_url)
         base_ping = sanitized_ping.rstrip("/")
-        start_url = f"{base_ping}{HEALTHCHECK_START_SUFFIX}"
         success_url = base_ping
         fail_url = f"{base_ping}{HEALTHCHECK_FAIL_SUFFIX}"
-        curl_cmd = (
-            f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES}"
-        )
-        wrapped = (
-            "("
-            f"{curl_cmd} {_quote(start_url)} >/dev/null 2>&1 || true; "
-            f"{command}; status=$?; "
-            "if [ $status -eq 0 ]; then "
-            f"{curl_cmd} {_quote(success_url)} >/dev/null 2>&1; "
-            "else "
-            f"{curl_cmd} {_quote(fail_url)} >/dev/null 2>&1; "
-            "fi; "
-            "exit $status"
-            ")"
-        )
+        curl_cmd = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES}"
+        wrapped = f"({command_with_logging}; status=$?; if [ $status -eq 0 ]; then {curl_cmd} {_quote(success_url)} >/dev/null 2>&1; else {curl_cmd} {_quote(fail_url)} >/dev/null 2>&1; fi; exit $status)"
         return f"cd {_quote(cwd)} && {wrapped}"
 
-    return f"cd {_quote(cwd)} && {command}"
-
+    return f"cd {_quote(cwd)} && {command_with_logging}"
 
 def get_user_crontab() -> CronTab:
     """Get the current user's crontab."""
@@ -319,6 +323,7 @@ async def sync_crontab() -> None:
                 details_concurrency=config.details_concurrency,
                 extra_args=config.extra_args,
                 healthcheck_ping_url=config.healthcheck_ping_url,
+                config_id=config.id,
             )
 
             job = cron.new(
@@ -329,6 +334,7 @@ async def sync_crontab() -> None:
 
     # Write to system
     cron.write()
+    clear_redis_cache()
 
 
 async def list_scheduled_jobs() -> list[dict[str, object]]:

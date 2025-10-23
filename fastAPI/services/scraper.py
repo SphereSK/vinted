@@ -95,7 +95,6 @@ async def _execute_manual_run(config_data: Dict[str, Any]) -> None:
         )
 
         count_before = await _count_listings()
-
         command = build_scrape_command(
             search_text=config_data["search_text"],
             max_pages=config_data["max_pages"],
@@ -116,6 +115,7 @@ async def _execute_manual_run(config_data: Dict[str, Any]) -> None:
             details_concurrency=config_data["details_concurrency"],
             extra_args=config_data["extra_args"] or None,
             healthcheck_ping_url=config_data["healthcheck_ping_url"],
+            config_id=config_id,
         )
 
         process = await asyncio.create_subprocess_shell(command)

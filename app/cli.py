@@ -1,5 +1,12 @@
 import asyncio
+from datetime import datetime, timezone
+from typing import Optional
+
 import typer
+from sqlalchemy import func, select
+
+from app.db.models import Listing, ScrapeConfig
+from app.db.session import Session, init_db
 from app.ingest import scrape_and_store
 from app.postprocess import process_language_detection
 from app.utils.url import build_catalog_url
@@ -9,6 +16,122 @@ from app.utils.categories import (
     list_video_game_platforms,
     search_platforms
 )
+from app.utils.logging import get_logger
+from fastAPI.redis import set_config_status
+
+
+async def run_scrape_job(
+    *,
+    search_text: str,
+    max_pages: int,
+    per_page: int,
+    delay: float,
+    locales: list[str],
+    fetch_details: bool,
+    details_for_new_only: bool,
+    use_proxy: bool,
+    category_id: Optional[int],
+    platform_ids: Optional[list[int]],
+    error_wait_minutes: int,
+    max_retries: int,
+    extra: Optional[list[str]],
+    order: Optional[str],
+    base_url: Optional[str],
+    details_strategy: str,
+    details_concurrency: int,
+    config_id: Optional[int] = None,
+) -> None:
+    """Execute the scrape and update status metadata when launched by a scheduled config."""
+
+    logger = get_logger(__name__)
+
+    await init_db()
+
+    count_before = 0
+    config_exists = False
+    error_message: Optional[str] = None
+
+    if config_id is not None:
+        async with Session() as session:
+            config = await session.get(ScrapeConfig, config_id)
+            if config:
+                config_exists = True
+                config.last_run_status = "running"
+                config.last_run_at = datetime.now(tz=timezone.utc)
+                config.last_run_items = None
+                await session.commit()
+
+        if config_exists:
+            await set_config_status(
+                config_id,
+                "running",
+                message="Scrape in progress",
+            )
+
+            async with Session() as session:
+                result = await session.execute(select(func.count()).select_from(Listing))
+                count_before = int(result.scalar() or 0)
+
+    try:
+        await scrape_and_store(
+            search_text=search_text,
+            max_pages=max_pages,
+            per_page=per_page,
+            delay=delay,
+            locales=locales,
+            fetch_details=fetch_details,
+            details_for_new_only=details_for_new_only,
+            use_proxy=use_proxy,
+            category_id=category_id,
+            platform_ids=platform_ids,
+            error_wait_minutes=error_wait_minutes,
+            max_retries=max_retries,
+            extra=extra,
+            order=order,
+            base_url=base_url,
+            details_strategy=details_strategy,
+            details_concurrency=details_concurrency,
+            logger=logger,
+        )
+        success = True
+    except Exception as exc:
+        error_message = str(exc)
+        logger.error(f"Scrape failed: {error_message}")
+        success = False
+    finally:
+        if config_id is not None and config_exists:
+            async with Session() as session:
+                config = await session.get(ScrapeConfig, config_id)
+                if config:
+                    config.last_run_at = datetime.now(tz=timezone.utc)
+
+                    if success:
+                        result = await session.execute(select(func.count()).select_from(Listing))
+                        count_after = int(result.scalar() or 0)
+                        new_items = max(count_after - count_before, 0)
+                        config.last_run_status = "success"
+                        config.last_run_items = new_items
+                        await session.commit()
+
+                        await set_config_status(
+                            config_id,
+                            "success",
+                            message=f"Scrape completed successfully ({new_items} new items)",
+                            extra={"items": new_items},
+                        )
+                    else:
+                        config.last_run_status = "failed"
+                        config.last_run_items = None
+                        await session.commit()
+
+                        await set_config_status(
+                            config_id,
+                            "failed",
+                            message=f"Scrape failed: {error_message}",
+                        )
+
+        if not success:
+            raise
 
 app = typer.Typer(
     help="""🛒 Vinted Scraper - Track prices and listings from Vinted marketplace
@@ -262,6 +385,12 @@ def scrape(
         "--details-concurrency",
         help="⚙️ Concurrency for fetching details [default: 2]."
     ),
+    config_id: Optional[int] = typer.Option(
+        None,
+        "--config-id",
+        help="Internal: scrape config identifier used by scheduled runs.",
+        hidden=True,
+    ),
 ):
     """
     🔍 Scrape Vinted listings and save to database with price tracking.
@@ -314,15 +443,11 @@ def scrape(
     ═══════════════════════════════════════════════════════════════
     """
 
+    logger = get_logger(__name__)
+
     # Validate that either search_text OR category/platform is provided
     if not search_text and not category and not platform_id:
-        typer.echo("❌ Error: You must provide at least one of:")
-        typer.echo("   • --search-text (search query)")
-        typer.echo("   • -c/--category (category ID)")
-        typer.echo("   • -p/--platform-id (platform ID)")
-        typer.echo("\nExamples:")
-        typer.echo("  vinted-scraper scrape --search-text 'ps5' -c 3026 -p 1281 --no-proxy --max-pages 10")
-        typer.echo("  vinted-scraper scrape -c 3026 -p 1281 --no-proxy --max-pages 10  # Without search text")
+        logger.error("You must provide at least one of: --search-text, -c/--category, or -p/--platform-id")
         raise typer.Exit(code=1)
 
     # Automatically imply fetch_details when --details-for-new-only is set
@@ -330,24 +455,25 @@ def scrape(
         fetch_details = True
 
     asyncio.run(
-        scrape_and_store(
+        run_scrape_job(
             search_text=search_text,
             max_pages=max_pages,
             per_page=per_page,
             delay=delay,
-            locales=locales,
+            locales=list(locales),
             fetch_details=fetch_details,
             details_for_new_only=details_for_new_only,
             use_proxy=not no_proxy,
-            category_id=category[0] if category else None,  # Use first category as primary
+            category_id=category[0] if category else None,
             platform_ids=list(platform_id) if platform_id else None,
             error_wait_minutes=error_wait_minutes,
             max_retries=max_retries,
-            extra=extra,
+            extra=list(extra) if extra else None,
             order=order,
             base_url=base_url,
             details_strategy=details_strategy,
             details_concurrency=details_concurrency,
+            config_id=config_id,
         )
     )
 
@@ -359,31 +485,32 @@ def categories(
     """
     List available Vinted categories with their IDs.
     """
+    logger = get_logger(__name__)
     if search:
         results = search_categories(search)
         if results:
-            typer.echo(f"\n📂 Categories matching '{search}':\n")
+            logger.info(f"\n📂 Categories matching '{search}':\n")
             for cat_id, name in results.items():
-                typer.echo(f"  {cat_id:6} - {name}")
+                logger.info(f"  {cat_id:6} - {name}")
         else:
-            typer.echo(f"❌ No categories found matching '{search}'")
+            logger.warning(f"❌ No categories found matching '{search}'")
     else:
         all_cats = list_common_categories()
-        typer.echo("\n📂 Common Vinted Categories:\n")
-        typer.echo("Electronics & Gaming:")
+        logger.info("\n📂 Common Vinted Categories:\n")
+        logger.info("Electronics & Gaming:")
         for cat_id in [2994, 3026, 1953]:
-            typer.echo(f"  {cat_id:6} - {all_cats[cat_id]}")
+            logger.info(f"  {cat_id:6} - {all_cats[cat_id]}")
 
-        typer.echo("\nFashion:")
+        logger.info("\nFashion:")
         for cat_id in [16, 18, 12]:
-            typer.echo(f"  {cat_id:6} - {all_cats[cat_id]}")
+            logger.info(f"  {cat_id:6} - {all_cats[cat_id]}")
 
-        typer.echo("\nHome & Lifestyle:")
+        logger.info("\nHome & Lifestyle:")
         for cat_id in [1243, 5]:
-            typer.echo(f"  {cat_id:6} - {all_cats[cat_id]}")
+            logger.info(f"  {cat_id:6} - {all_cats[cat_id]}")
 
-        typer.echo("\n💡 Use -c <ID> to filter by category in scrape command")
-        typer.echo("   Example: vinted-scraper scrape --search-text 'ps5' -c 3026\n")
+        logger.info("\n💡 Use -c <ID> to filter by category in scrape command")
+        logger.info("   Example: vinted-scraper scrape --search-text 'ps5' -c 3026\n")
 
 
 @app.command()
@@ -393,37 +520,38 @@ def platforms(
     """
     List available video game platform IDs.
     """
+    logger = get_logger(__name__)
     if search:
         results = search_platforms(search)
         if results:
-            typer.echo(f"\n🎮 Platforms matching '{search}':\n")
+            logger.info(f"\n🎮 Platforms matching '{search}':\n")
             for plat_id, name in results.items():
-                typer.echo(f"  {plat_id:6} - {name}")
+                logger.info(f"  {plat_id:6} - {name}")
         else:
-            typer.echo(f"❌ No platforms found matching '{search}'")
+            logger.warning(f"❌ No platforms found matching '{search}'")
     else:
         all_plats = list_video_game_platforms()
-        typer.echo("\n🎮 Video Game Platforms:\n")
+        logger.info("\n🎮 Video Game Platforms:\n")
 
-        typer.echo("PlayStation:")
+        logger.info("PlayStation:")
         for plat_id in [1281, 1280, 1279, 1278, 1277, 1286, 1287]:
-            typer.echo(f"  {plat_id:6} - {all_plats[plat_id]}")
+            logger.info(f"  {plat_id:6} - {all_plats[plat_id]}")
 
-        typer.echo("\nXbox:")
+        logger.info("\nXbox:")
         for plat_id in [1282, 1283, 1284, 1285]:
-            typer.echo(f"  {plat_id:6} - {all_plats[plat_id]}")
+            logger.info(f"  {plat_id:6} - {all_plats[plat_id]}")
 
-        typer.echo("\nNintendo:")
+        logger.info("\nNintendo:")
         for plat_id in [1288, 1289, 1290, 1291, 1292, 1293, 1294, 1295]:
-            typer.echo(f"  {plat_id:6} - {all_plats[plat_id]}")
+            logger.info(f"  {plat_id:6} - {all_plats[plat_id]}")
 
-        typer.echo("\nOther:")
+        logger.info("\nOther:")
         for plat_id in [1296, 1297]:
-            typer.echo(f"  {plat_id:6} - {all_plats[plat_id]}")
+            logger.info(f"  {plat_id:6} - {all_plats[plat_id]}")
 
-        typer.echo("\n💡 Use -p <ID> to filter by platform in scrape command")
-        typer.echo("   Example: vinted-scraper scrape --search-text 'ps5' -c 3026 -p 1281 -p 1280")
-        typer.echo("   (Filters for PS5 and PS4 games)\n")
+        logger.info("\n💡 Use -p <ID> to filter by platform in scrape command")
+        logger.info("   Example: vinted-scraper scrape --search-text 'ps5' -c 3026 -p 1281 -p 1280")
+        logger.info("   (Filters for PS5 and PS4 games)\n")
 
 
 @app.command()
@@ -479,11 +607,13 @@ def detect_language(
 
     ═══════════════════════════════════════════════════════════════
     """
+    logger = get_logger(__name__)
     asyncio.run(
         process_language_detection(
             limit=limit,
             delay=delay,
             source=source,
+            logger=logger,
         )
     )
 
@@ -697,8 +827,10 @@ Features:
 📚 Documentation: See CLAUDE.md, DATA_FIELDS_GUIDE.md, SCRAPER_BEHAVIOR.md
 🌐 Dashboard: http://localhost:8000
 
-""")
+"""
+)
 
 
 if __name__ == "__main__":
     app()
+

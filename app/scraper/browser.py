@@ -6,6 +6,9 @@ import zipfile
 import requests
 import undetected_chromedriver as uc
 from undetected_chromedriver import ChromeOptions
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
 
 def ensure_chromium_installed() -> str:
     """
@@ -24,7 +27,7 @@ def ensure_chromium_installed() -> str:
     os.makedirs(base_dir, exist_ok=True)
     zip_path = os.path.join(base_dir, "chrome.zip")
 
-    print("⚙️  Downloading portable Chromium (~120 MB, one-time)…")
+    logger.info("Downloading portable Chromium (~120 MB, one-time)…")
     url = "https://download-chromium.appspot.com/dl/Linux_x64?type=snapshots"
     try:
         with requests.get(url, stream=True, timeout=60) as r:
@@ -33,16 +36,16 @@ def ensure_chromium_installed() -> str:
                 for chunk in r.iter_content(chunk_size=8192):
                     f.write(chunk)
     except requests.exceptions.RequestException as e:
-        raise RuntimeError(f"❌ Failed to download Chromium: {e}")
+        raise RuntimeError(f"Failed to download Chromium: {e}")
 
-    print("📦 Extracting Chromium …")
+    logger.info("Extracting Chromium…")
     try:
         with zipfile.ZipFile(zip_path, "r") as z:
             z.extractall(base_dir)
     except zipfile.BadZipFile as e:
-        raise RuntimeError(f"❌ Failed to extract Chromium (bad zip file): {e}")
+        raise RuntimeError(f"Failed to extract Chromium (bad zip file): {e}")
     except Exception as e:
-        raise RuntimeError(f"❌ Failed to extract Chromium: {e}")
+        raise RuntimeError(f"Failed to extract Chromium: {e}")
 
     os.remove(zip_path)
 
@@ -54,7 +57,7 @@ def ensure_chromium_installed() -> str:
             os.chmod(chrome_bin, 0o755)
             return chrome_bin
 
-    raise RuntimeError("❌ Could not locate extracted Chromium binary")
+    raise RuntimeError("Could not locate extracted Chromium binary")
 
 def init_driver(headless: bool = True):
     """
@@ -79,7 +82,7 @@ def init_driver(headless: bool = True):
     options.add_argument("--disable-features=IsolateOrigins,site-per-process")
     options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    print(f"✅ Using Chrome binary: {chrome_path}")
+    logger.info(f"Using Chrome binary: {chrome_path}")
     driver = uc.Chrome(options=options, browser_executable_path=chrome_path)
     return driver
 

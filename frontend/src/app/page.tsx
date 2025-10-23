@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import {
   ChevronDown,
   ChevronLeft,
@@ -17,6 +17,9 @@ import {
   Search,
   Trash2,
   X,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -60,8 +63,9 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatActiveDuration } from "@/lib/format";
 import {
+  clearListingsCache,
   createScrapeConfig,
   deleteScrapeConfig,
   fetchListings,
@@ -79,18 +83,33 @@ import {
 import { appConfig } from "@/lib/config";
 import type {
   CategoryResponse,
+  ConditionResponse,
   CronJobEntry,
   ListingResponse,
   ListingsPage,
+  ListingsQuery,
   RuntimeStatusResponse,
   ScrapeConfigResponse,
   ScrapeConfigWritePayload,
+  SourceResponse,
   StatsResponse,
   CronCommandResponse,
 } from "@/lib/types";
 
 const DEFAULT_PAGE_SIZE = 15;
 const PAGE_SIZE_OPTIONS = [15, 30, 50, 100] as const;
+type ListingSortField =
+  | "last_seen_at"
+  | "first_seen_at"
+  | "price"
+  | "title"
+  | "price_change"
+  | "condition"
+  | "category_id"
+  | "platform_ids"
+  | "source";
+const DEFAULT_SORT_FIELD: ListingSortField = "last_seen_at";
+const DEFAULT_SORT_ORDER: "asc" | "desc" = "desc";
 const DEFAULT_FORM: ConfigFormState = {
   id: undefined,
   name: "",
@@ -181,9 +200,15 @@ export default function Home() {
   const [listingPageNumber, setListingPageNumber] = useState(1);
   const [listingPageSize, setListingPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [listingActiveOnly, setListingActiveOnly] = useState(true);
-  const [listingSortField, setListingSortField] = useState<"last_seen_at" | "first_seen_at" | "price" | "title">("last_seen_at");
-  const [listingSortOrder, setListingSortOrder] = useState<"asc" | "desc">("desc");
+  const [listingSortField, setListingSortField] = useState<ListingSortField | null>(null);
+  const [listingSortOrder, setListingSortOrder] = useState<"asc" | "desc">(DEFAULT_SORT_ORDER);
   const [listingCurrency, setListingCurrency] = useState("");
+  const [listingPriceMin, setListingPriceMin] = useState("");
+  const [listingPriceMax, setListingPriceMax] = useState("");
+  const [listingCondition, setListingCondition] = useState("");
+  const [listingCategory, setListingCategory] = useState("");
+  const [listingPlatform, setListingPlatform] = useState("");
+  const [listingSource, setListingSource] = useState("");
   const [listingsLoading, setListingsLoading] = useState(true);
   const [listingsError, setListingsError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -199,6 +224,82 @@ export default function Home() {
   const [cronSyncing, setCronSyncing] = useState(false);
   const [categories, setCategories] = useState<CategoryResponse[]>([]);
   const [platforms, setPlatforms] = useState<CategoryResponse[]>([]);
+  const [conditions, setConditions] = useState<ConditionResponse[]>([]);
+  const [sources, setSources] = useState<SourceResponse[]>([]);
+
+  const categoryLookup = useMemo(() => {
+    const map = new Map<number, string>();
+    categories.forEach((cat) => {
+      map.set(cat.id, cat.name);
+    });
+    return map;
+  }, [categories]);
+
+  const platformLookup = useMemo(() => {
+    const map = new Map<number, string>();
+    platforms.forEach((platform) => {
+      map.set(platform.id, platform.name);
+    });
+    return map;
+  }, [platforms]);
+
+  const sourceLookupByCode = useMemo(() => {
+    const map = new Map<string, string>();
+    sources.forEach((source) => {
+      map.set(source.code.trim().toLowerCase(), source.label);
+    });
+    return map;
+  }, [sources]);
+
+  const sourceLookupById = useMemo(() => {
+    const map = new Map<number, string>();
+    sources.forEach((source) => {
+      map.set(source.id, source.label);
+    });
+    return map;
+  }, [sources]);
+
+  const resolveCategoryLabel = useCallback(
+    (categoryId: number | null | undefined) => {
+      if (categoryId == null) {
+        return "Uncategorised";
+      }
+      return (
+        categoryLookup.get(categoryId) ?? `Category ${categoryId}`
+      );
+    },
+    [categoryLookup],
+  );
+
+  const resolvePlatformLabels = useCallback(
+    (platformIds: number[] | null | undefined) =>
+      formatPlatformLabels(platformIds, platformLookup),
+    [platformLookup],
+  );
+
+  const resolveSourceLabel = useCallback(
+    (value: string | number | null | undefined) => {
+      if (value == null) return "Unknown";
+      if (typeof value === "number") {
+        return sourceLookupById.get(value) ?? "Unknown";
+      }
+      const normalized = value.trim().toLowerCase();
+      return sourceLookupByCode.get(normalized) ?? formatSourceLabel(normalized);
+    },
+    [sourceLookupByCode, sourceLookupById],
+  );
+
+  const resolveConditionLabel = useCallback(
+    (id: number | null, fallback: string | null | undefined) => {
+      if (id != null) {
+        const option = conditions.find((entry) => entry.id === id);
+        if (option) return option.label;
+      }
+      if (fallback) return formatConditionLabel(fallback);
+      return "Unknown";
+    },
+    [conditions],
+  );
 
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isConfigDialogOpen, setConfigDialogOpen] = useState(false);
@@ -258,18 +359,19 @@ export default function Home() {
   useEffect(() => {
     if (!configs.length) return;
 
-    const interval = setInterval(() => {
-      refreshStatuses(configs.map((cfg) => cfg.id)).catch((error) => {
-        console.warn("Status polling failed", error);
-      });
-    }, appConfig.statusPollInterval);
+    // const interval = setInterval(() => {
+    //   refreshStatuses(configs.map((cfg) => cfg.id)).catch((error) => {
+    //     console.warn("Status polling failed", error);
+    //   });
+    // }, appConfig.statusPollInterval);
 
-    return () => clearInterval(interval);
+    // return () => clearInterval(interval);
   }, [configs]);
 
   async function refreshAll() {
     setIsRefreshing(true);
     try {
+      await clearListingsCache();
       await Promise.all([
         loadStats(),
         loadListings(listingPageNumber, listingPageSize, listingActiveOnly),
@@ -298,28 +400,94 @@ export default function Home() {
     pageArg = listingPageNumber,
     pageSizeArg = listingPageSize,
     activeOnlyArg = listingActiveOnly,
-    sortFieldArg = listingSortField,
+    sortFieldArg: ListingSortField | null = listingSortField,
     sortOrderArg = listingSortOrder,
     currencyArg = listingCurrency,
+    priceMinArg = listingPriceMin,
+    priceMaxArg = listingPriceMax,
+    conditionArg = listingCondition,
+    categoryArg = listingCategory,
+    platformArg = listingPlatform,
+    sourceArg = listingSource,
   ) {
     setListingsLoading(true);
     setListingsError(null);
     try {
+      let priceMinCents = parsePriceInput(priceMinArg);
+      let priceMaxCents = parsePriceInput(priceMaxArg);
+      if (
+        priceMinCents !== null &&
+        priceMaxCents !== null &&
+        priceMinCents > priceMaxCents
+      ) {
+        [priceMinCents, priceMaxCents] = [priceMaxCents, priceMinCents];
+      }
+
+      const conditionValueRaw = (conditionArg ?? "").trim();
+      const conditionIdParam = conditionValueRaw ? Number(conditionValueRaw) : undefined;
+      const hasConditionId = Number.isFinite(conditionIdParam);
+      const conditionValue = conditionValueRaw.toLowerCase();
+      const conditionParam = hasConditionId ? undefined : conditionValue || undefined;
+      const categoryValue = (categoryArg ?? "").trim();
+      const categoryIdParam = categoryValue ? Number(categoryValue) : undefined;
+      const platformValue = (platformArg ?? "").trim();
+      const platformIdParam = platformValue ? Number(platformValue) : undefined;
+      const sourceValueRaw = (sourceArg ?? "").trim();
+      const sourceIdParam = sourceValueRaw ? Number(sourceValueRaw) : undefined;
+      const hasSourceId = Number.isFinite(sourceIdParam);
+      const sourceValue = sourceValueRaw.toLowerCase();
+      const sourceParam = hasSourceId ? undefined : sourceValue || undefined;
+
+      const effectiveSortField = sortFieldArg ?? DEFAULT_SORT_FIELD;
+      const effectiveSortOrder = sortFieldArg ? sortOrderArg : DEFAULT_SORT_ORDER;
+      const serverSortField =
+        effectiveSortField === "price_change" ? "last_seen_at" : effectiveSortField;
+
       const data = await fetchListings({
         page: pageArg,
         page_size: pageSizeArg,
         search: debouncedSearch || undefined,
         active_only: activeOnlyArg,
-        sort_field: sortFieldArg,
-        sort_order: sortOrderArg,
+        sort_field: serverSortField as ListingsQuery["sort_field"],
+        sort_order: effectiveSortOrder,
         currency: currencyArg || undefined,
+        price_min_cents: priceMinCents ?? undefined,
+        price_max_cents: priceMaxCents ?? undefined,
+        condition_id: hasConditionId ? Number(conditionIdParam) : undefined,
+        condition: conditionParam,
+        category_id: Number.isFinite(categoryIdParam) ? categoryIdParam : undefined,
+        platform_id: Number.isFinite(platformIdParam) ? platformIdParam : undefined,
+        source_id: hasSourceId ? Number(sourceIdParam) : undefined,
+        source: sourceParam,
       });
-      setListingPage(data);
+
+      const items =
+        sortFieldArg === "price_change"
+          ? [...data.items].sort((a, b) => {
+              const deltaA = priceDeltaCents(a);
+              const deltaB = priceDeltaCents(b);
+              if (deltaA === deltaB) {
+                const lastSeenA = new Date(a.last_seen_at).getTime();
+                const lastSeenB = new Date(b.last_seen_at).getTime();
+                return sortOrderArg === "asc"
+                  ? lastSeenA - lastSeenB
+                  : lastSeenB - lastSeenA;
+              }
+              return sortOrderArg === "asc" ? deltaA - deltaB : deltaB - deltaA;
+            })
+          : data.items;
+
+      setListingPage({
+        ...data,
+        items,
+      });
+      setConditions(data.available_conditions ?? []);
+      setSources(data.available_sources ?? []);
       setListingPageNumber(data.page);
       setListingPageSize(data.page_size);
       setListingActiveOnly(activeOnlyArg);
       setListingSortField(sortFieldArg);
-      setListingSortOrder(sortOrderArg);
+      setListingSortOrder(effectiveSortOrder);
       setListingCurrency(currencyArg);
     } catch (error) {
       const message =
@@ -343,6 +511,12 @@ export default function Home() {
       listingSortField,
       listingSortOrder,
       listingCurrency,
+      listingPriceMin,
+      listingPriceMax,
+      listingCondition,
+      listingCategory,
+      listingPlatform,
+      listingSource,
     );
   }
 
@@ -357,6 +531,12 @@ export default function Home() {
       listingSortField,
       listingSortOrder,
       listingCurrency,
+      listingPriceMin,
+      listingPriceMax,
+      listingCondition,
+      listingCategory,
+      listingPlatform,
+      listingSource,
     );
   }
 
@@ -370,16 +550,49 @@ export default function Home() {
       listingSortField,
       listingSortOrder,
       listingCurrency,
+      listingPriceMin,
+      listingPriceMax,
+      listingCondition,
+      listingCategory,
+      listingPlatform,
+      listingSource,
     );
   }
 
-  function handleListingsSortChange(field: "last_seen_at" | "first_seen_at" | "price" | "title") {
-    const nextOrder: "asc" | "desc" =
-      listingSortField === field && listingSortOrder === "desc" ? "asc" : "desc";
-    setListingSortField(field);
+  function handleListingsSortChange(field: ListingSortField) {
+    let nextField: ListingSortField | null;
+    let nextOrder: "asc" | "desc";
+
+    if (listingSortField === field) {
+      if (listingSortOrder === "asc") {
+        nextField = field;
+        nextOrder = "desc";
+      } else {
+        nextField = null;
+        nextOrder = DEFAULT_SORT_ORDER;
+      }
+    } else {
+      nextField = field;
+      nextOrder = "asc";
+    }
+
+    setListingSortField(nextField);
     setListingSortOrder(nextOrder);
     setListingPageNumber(1);
-    void loadListings(1, listingPageSize, listingActiveOnly, field, nextOrder, listingCurrency);
+    void loadListings(
+      1,
+      listingPageSize,
+      listingActiveOnly,
+      nextField,
+      nextOrder,
+      listingCurrency,
+      listingPriceMin,
+      listingPriceMax,
+      listingCondition,
+      listingCategory,
+      listingPlatform,
+      listingSource,
+    );
   }
 
   function handleListingsCurrencyChange(value: string) {
@@ -393,12 +606,124 @@ export default function Home() {
       listingSortField,
       listingSortOrder,
       normalized,
+      listingPriceMin,
+      listingPriceMax,
+      listingCondition,
+      listingCategory,
+      listingPlatform,
+      listingSource,
+    );
+  }
+
+  function handleListingsConditionChange(value: string) {
+    setListingCondition(value);
+    setListingPageNumber(1);
+    void loadListings(
+      1,
+      listingPageSize,
+      listingActiveOnly,
+      listingSortField,
+      listingSortOrder,
+      listingCurrency,
+      listingPriceMin,
+      listingPriceMax,
+      value,
+      listingCategory,
+      listingPlatform,
+      listingSource,
+    );
+  }
+
+  function handleListingsCategoryChange(value: string) {
+    setListingCategory(value);
+    setListingPageNumber(1);
+    void loadListings(
+      1,
+      listingPageSize,
+      listingActiveOnly,
+      listingSortField,
+      listingSortOrder,
+      listingCurrency,
+      listingPriceMin,
+      listingPriceMax,
+      listingCondition,
+      value,
+      listingPlatform,
+      listingSource,
+    );
+  }
+
+  function handleListingsPlatformChange(value: string) {
+    setListingPlatform(value);
+    setListingPageNumber(1);
+    void loadListings(
+      1,
+      listingPageSize,
+      listingActiveOnly,
+      listingSortField,
+      listingSortOrder,
+      listingCurrency,
+      listingPriceMin,
+      listingPriceMax,
+      listingCondition,
+      listingCategory,
+      value,
+      listingSource,
+    );
+  }
+
+  function handleListingPriceMinChange(value: string) {
+    setListingPriceMin(value);
+  }
+
+  function handleListingPriceMaxChange(value: string) {
+    setListingPriceMax(value);
+  }
+
+  function handleListingsSourceChange(value: string) {
+    setListingSource(value);
+    setListingPageNumber(1);
+    void loadListings(
+      1,
+      listingPageSize,
+      listingActiveOnly,
+      listingSortField,
+      listingSortOrder,
+      listingCurrency,
+      listingPriceMin,
+      listingPriceMax,
+      listingCondition,
+      listingCategory,
+      listingPlatform,
+      value,
+    );
+  }
+
+  function handleApplyListingFilters() {
+    setListingPageNumber(1);
+    void loadListings(
+      1,
+      listingPageSize,
+      listingActiveOnly,
+      listingSortField,
+      listingSortOrder,
+      listingCurrency,
+      listingPriceMin,
+      listingPriceMax,
+      listingCondition,
+      listingCategory,
+      listingPlatform,
+      listingSource,
     );
   }
 
   async function loadConfigs() {
     try {
-      const [configsData, categoriesData, platformsData] = await Promise.all([
+      const [
+        configsData,
+        categoriesData,
+        platformsData,
+      ] = await Promise.all([
         listScrapeConfigs(),
         listCategories(),
         listPlatforms(),
@@ -476,6 +801,65 @@ export default function Home() {
       });
       return next;
     });
+
+    const statusMap = new Map<number, RuntimeStatusResponse>();
+    results.forEach(([id, status]) => {
+      if (status) {
+        statusMap.set(id, status);
+      }
+    });
+
+    if (statusMap.size > 0) {
+      setConfigs((prevConfigs) => {
+        let mutated = false;
+
+        const nextConfigs = prevConfigs.map((config) => {
+          const status = statusMap.get(config.id);
+          if (!status) {
+            return config;
+          }
+
+          const patch: Partial<ScrapeConfigResponse> = {};
+          let hasPatch = false;
+
+          const nextStatus = status.status ?? null;
+          if (nextStatus && nextStatus !== config.last_run_status) {
+            patch.last_run_status = nextStatus;
+            hasPatch = true;
+          }
+
+          const nextUpdatedAt = status.updated_at ?? null;
+          if (nextUpdatedAt && nextUpdatedAt !== config.last_run_at) {
+            patch.last_run_at = nextUpdatedAt;
+            hasPatch = true;
+          }
+
+          let nextItems: number | null | undefined;
+          if (status.status === "success") {
+            nextItems =
+              typeof status.items === "number"
+                ? status.items
+                : config.last_run_items ?? null;
+          } else if (status.status === "failed" || status.status === "running" || status.status === "queued") {
+            nextItems = null;
+          }
+
+          if (nextItems !== undefined && nextItems !== config.last_run_items) {
+            patch.last_run_items = nextItems;
+            hasPatch = true;
+          }
+
+          if (!hasPatch) {
+            return config;
+          }
+
+          mutated = true;
+          return { ...config, ...patch };
+        });
+
+        return mutated ? nextConfigs : prevConfigs;
+      });
+    }
   }
 
   async function handleRun(config: ScrapeConfigResponse) {
@@ -792,6 +1176,27 @@ export default function Home() {
             currency={listingCurrency}
             onCurrencyChange={handleListingsCurrencyChange}
             availableCurrencies={listingPage.available_currencies}
+            priceMin={listingPriceMin}
+            priceMax={listingPriceMax}
+            onPriceMinChange={handleListingPriceMinChange}
+            onPriceMaxChange={handleListingPriceMaxChange}
+            condition={listingCondition}
+            onConditionChange={handleListingsConditionChange}
+            categoryId={listingCategory}
+            onCategoryChange={handleListingsCategoryChange}
+            platformId={listingPlatform}
+            onPlatformChange={handleListingsPlatformChange}
+            source={listingSource}
+            onSourceChange={handleListingsSourceChange}
+            conditions={conditions}
+            categories={categories}
+            platforms={platforms}
+            sources={sources}
+            onApplyFilters={handleApplyListingFilters}
+            resolveCategoryLabel={resolveCategoryLabel}
+            resolvePlatformLabels={resolvePlatformLabels}
+            resolveConditionLabel={resolveConditionLabel}
+            resolveSourceLabel={resolveSourceLabel}
           />
         </TabsContent>
 
@@ -1026,12 +1431,33 @@ interface ListingsSectionProps {
   pageSizeOptions: readonly number[];
   activeOnly: boolean;
   onToggleActiveOnly: (value: boolean) => void;
-  sortField: "last_seen_at" | "first_seen_at" | "price" | "title";
+  sortField: ListingSortField;
   sortOrder: "asc" | "desc";
-  onSortChange: (field: "last_seen_at" | "first_seen_at" | "price" | "title") => void;
+  onSortChange: (field: ListingSortField) => void;
   currency: string;
   onCurrencyChange: (currency: string) => void;
   availableCurrencies: string[];
+  priceMin: string;
+  priceMax: string;
+  onPriceMinChange: (value: string) => void;
+  onPriceMaxChange: (value: string) => void;
+  condition: string;
+  onConditionChange: (value: string) => void;
+  conditions: ConditionResponse[];
+  categoryId: string;
+  onCategoryChange: (value: string) => void;
+  categories: CategoryResponse[];
+  platformId: string;
+  onPlatformChange: (value: string) => void;
+  platforms: CategoryResponse[];
+  source: string;
+  onSourceChange: (value: string) => void;
+  sources: SourceResponse[];
+  onApplyFilters: () => void;
+  resolveCategoryLabel: (categoryId: number | null | undefined) => string;
+  resolvePlatformLabels: (platformIds: number[] | null | undefined) => string;
+  resolveConditionLabel: (id: number | null, fallback: string | null | undefined) => string;
+  resolveSourceLabel: (value: string | number | null | undefined) => string;
 }
 
 function ListingsSection({
@@ -1052,6 +1478,27 @@ function ListingsSection({
   currency,
   onCurrencyChange,
   availableCurrencies,
+  priceMin,
+  priceMax,
+  onPriceMinChange,
+  onPriceMaxChange,
+  condition,
+  onConditionChange,
+  conditions,
+  categoryId,
+  onCategoryChange,
+  categories,
+  platformId,
+  onPlatformChange,
+  platforms,
+  source,
+  onSourceChange,
+  sources,
+  onApplyFilters,
+  resolveCategoryLabel,
+  resolvePlatformLabels,
+  resolveConditionLabel,
+  resolveSourceLabel,
 }: ListingsSectionProps) {
   const totalPages = Math.max(1, Math.ceil(page.total / Math.max(page.page_size, 1)));
   const startIndex = page.total === 0 ? 0 : (page.page - 1) * page.page_size + 1;
@@ -1061,7 +1508,7 @@ function ListingsSection({
     ? ["ALL", ...availableCurrencies]
     : ["ALL"];
 
-  const renderSortIcon = (field: "last_seen_at" | "first_seen_at" | "price" | "title") => {
+  const renderSortIcon = (field: ListingSortField) => {
     if (sortField !== field) {
       return <ChevronsUpDown className="size-3 opacity-0 transition-opacity group-hover:opacity-70" />;
     }
@@ -1076,7 +1523,7 @@ function ListingsSection({
     label,
     className,
   }: {
-    field: "last_seen_at" | "first_seen_at" | "price" | "title";
+    field: ListingSortField;
     label: string;
     className?: string;
   }) => (
@@ -1094,51 +1541,240 @@ function ListingsSection({
     </button>
   );
 
+  const conditionOptions = useMemo(
+    () =>
+      [...conditions]
+        .filter((option, index, array) =>
+          array.findIndex((candidate) => candidate.id === option.id) === index,
+        )
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [conditions],
+  );
+
+  const categoryOptions = useMemo(
+    () =>
+      [...categories]
+        .filter((category, index, array) =>
+          array.findIndex((candidate) => candidate.id === category.id) === index,
+        )
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((category) => ({
+          value: String(category.id),
+          label: category.name,
+        })),
+    [categories],
+  );
+
+  const platformOptions = useMemo(
+    () =>
+      [...platforms]
+        .filter((platform, index, array) =>
+          array.findIndex((candidate) => candidate.id === platform.id) === index,
+        )
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((platform) => ({
+          value: String(platform.id),
+          label: platform.name,
+        })),
+    [platforms],
+  );
+
+  const sourceOptions = useMemo(
+    () =>
+      [...sources]
+        .filter((sourceOption, index, array) =>
+          array.findIndex((candidate) => candidate.id === sourceOption.id) === index,
+        )
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [sources],
+  );
+
   return (
     <>
-      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div className="flex w-full max-w-xl items-center gap-3">
-          <div className="relative w-full">
-            <Search className="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
-            <Input
-              value={searchTerm}
-              onChange={(event) => onSearchChange(event.target.value)}
-              placeholder="Search listings by title…"
-              className="pl-9"
-            />
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="relative flex-1">
+              <Search className="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
+              <Input
+                value={searchTerm}
+                onChange={(event) => onSearchChange(event.target.value)}
+                placeholder="Search listings by title…"
+                className="pl-9"
+              />
+            </div>
+            <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-2 sm:items-center sm:gap-3">
+              <div className="flex flex-col gap-1">
+                <Label
+                  htmlFor="price-min"
+                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                >
+                  Price from
+                </Label>
+                <Input
+                  id="price-min"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={priceMin}
+                  onChange={(event) => onPriceMinChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      onApplyFilters();
+                    }
+                  }}
+                  placeholder="0"
+                  className="h-9"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Label
+                  htmlFor="price-max"
+                  className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+                >
+                  Price to
+                </Label>
+                <Input
+                  id="price-max"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={priceMax}
+                  onChange={(event) => onPriceMaxChange(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      onApplyFilters();
+                    }
+                  }}
+                  placeholder="500"
+                  className="h-9"
+                />
+              </div>
+            </div>
           </div>
-          <Button
-            variant="outline"
-            onClick={onReload}
-            disabled={loading}
-            className="whitespace-nowrap"
-          >
-            {loading ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <RefreshCcw className="size-4" />
-            )}
-            Refresh
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              onClick={onApplyFilters}
+              disabled={loading}
+              className="whitespace-nowrap"
+            >
+              {loading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Search className="size-4" />
+              )}
+              Apply filters
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onReload}
+              disabled={loading}
+              className="whitespace-nowrap"
+            >
+              <RefreshCcw className={cn("size-4", loading && "animate-spin")} />
+              Reload data
+            </Button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Switch
-              id="active-only"
-              checked={activeOnly}
-              onCheckedChange={(checked) => onToggleActiveOnly(Boolean(checked))}
-            />
-            <Label htmlFor="active-only" className="text-sm">Active only</Label>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Condition
+            </Label>
+            <Select
+              value={condition || "ALL"}
+              onValueChange={(value) => onConditionChange(value === "ALL" ? "" : value)}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="All conditions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All conditions</SelectItem>
+                {conditionOptions.map((option) => (
+                  <SelectItem key={option.id} value={String(option.id)}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="currency-filter" className="text-sm text-muted-foreground">
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Category
+            </Label>
+            <Select
+              value={categoryId || "ALL"}
+              onValueChange={(value) => onCategoryChange(value === "ALL" ? "" : value)}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="All categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All categories</SelectItem>
+                {categoryOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Platform
+            </Label>
+            <Select
+              value={platformId || "ALL"}
+              onValueChange={(value) => onPlatformChange(value === "ALL" ? "" : value)}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="All platforms" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All platforms</SelectItem>
+                {platformOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Source
+            </Label>
+            <Select
+              value={source || "ALL"}
+              onValueChange={(value) => onSourceChange(value === "ALL" ? "" : value)}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="All sources" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All sources</SelectItem>
+                {sourceOptions.map((option) => (
+                  <SelectItem key={option.id} value={String(option.id)}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="currency-filter" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Currency
             </Label>
             <Select
               value={currency || "ALL"}
               onValueChange={onCurrencyChange}
             >
-              <SelectTrigger id="currency-filter" className="h-9 w-[110px]">
+              <SelectTrigger id="currency-filter" className="h-9">
                 <SelectValue placeholder="Currency" />
               </SelectTrigger>
               <SelectContent>
@@ -1150,15 +1786,15 @@ function ListingsSection({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2">
-            <Label htmlFor="page-size" className="text-sm text-muted-foreground">
+          <div className="flex flex-col gap-1">
+            <Label htmlFor="page-size" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Page size
             </Label>
             <Select
               value={String(page.page_size)}
               onValueChange={(value) => onPageSizeChange(Number(value))}
             >
-              <SelectTrigger id="page-size" className="h-9 w-[90px]">
+              <SelectTrigger id="page-size" className="h-9">
                 <SelectValue placeholder="Page size" />
               </SelectTrigger>
               <SelectContent>
@@ -1170,6 +1806,24 @@ function ListingsSection({
               </SelectContent>
             </Select>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Switch
+              id="active-only"
+              checked={activeOnly}
+              onCheckedChange={(checked) => onToggleActiveOnly(Boolean(checked))}
+            />
+            <Label htmlFor="active-only" className="text-sm">
+              Active only
+            </Label>
+          </div>
+          <span className="text-sm text-muted-foreground">
+            {page.total === 0
+              ? "No listings to display."
+              : `Showing ${startIndex}-${endIndex} of ${page.total} listings.`}
+          </span>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -1196,13 +1850,7 @@ function ListingsSection({
         </div>
       </div>
 
-      <span className="text-sm text-muted-foreground">
-        {page.total === 0
-          ? "No listings to display."
-          : `Showing ${startIndex}-${endIndex} of ${page.total} listings.`}
-      </span>
-
-      <Card>
+      <Card className="w-full overflow-hidden">
         <CardHeader>
           <CardTitle>Latest listings</CardTitle>
           <CardDescription>
@@ -1222,64 +1870,119 @@ function ListingsSection({
               No listings found for the current filters.
             </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">#</TableHead>
-                  <TableHead>
-                    <SortButton field="title" label="Title" />
-                  </TableHead>
-                  <TableHead>
-                    <SortButton field="price" label="Price" />
-                  </TableHead>
-                  <TableHead>Change</TableHead>
-                  <TableHead>
-                    <SortButton field="last_seen_at" label="Last seen" className="justify-end" />
-                  </TableHead>
-                  <TableHead>Source</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {page.items.map((listing) => (
-                  <TableRow key={listing.id}>
-                    <TableCell>
-                      <ListingAvatar listing={listing} />
-                    </TableCell>
-                    <TableCell className="max-w-[320px]">
-                      <a
-                        href={listing.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="line-clamp-2 font-medium hover:underline"
-                      >
-                        {listing.title ?? "Untitled listing"}
-                      </a>
-                      <p className="text-muted-foreground text-xs">
-                        {listing.location ?? "Unknown location"}
-                      </p>
-                    </TableCell>
-                    <TableCell>
-                      {formatCurrency(
-                        listing.price_cents,
-                        listing.currency ?? undefined,
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <PriceChangeBadge
-                        change={listing.price_change}
-                        current={listing.price_cents}
-                        previous={listing.previous_price_cents}
-                        currency={listing.currency ?? undefined}
-                      />
-                    </TableCell>
-                    <TableCell className="text-right">{formatDate(listing.last_seen_at)}</TableCell>
-                    <TableCell className="capitalize">
-                      {listing.source ?? "vinted"}
-                    </TableCell>
+            <div className="overflow-x-auto">
+              <Table className="min-w-[960px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">#</TableHead>
+                    <TableHead>
+                      <SortButton field="title" label="Title" />
+                    </TableHead>
+                    <TableHead>
+                      <SortButton field="price" label="Price" />
+                    </TableHead>
+                    <TableHead>
+                      <SortButton field="price_change" label="Change" />
+                    </TableHead>
+                    <TableHead>
+                      <SortButton field="condition" label="Condition" />
+                    </TableHead>
+                    <TableHead>
+                      <SortButton field="category_id" label="Category" />
+                    </TableHead>
+                    <TableHead>
+                      <SortButton field="platform_ids" label="Platforms" />
+                    </TableHead>
+                    <TableHead>
+                      <SortButton field="first_seen_at" label="Active" />
+                    </TableHead>
+                    <TableHead>
+                      <SortButton field="last_seen_at" label="Last seen" className="justify-end" />
+                    </TableHead>
+                    <TableHead>
+                      <SortButton field="source" label="Source" />
+                    </TableHead>
                   </TableRow>
-                ))}
+                </TableHeader>
+                <TableBody>
+                {page.items.map((listing) => {
+                  const categoryLabel =
+                    listing.category_name ??
+                    resolveCategoryLabel(listing.category_id);
+                  const platformLabel = listing.platform_names?.length
+                    ? formatList(listing.platform_names)
+                    : resolvePlatformLabels(listing.platform_ids);
+                  const conditionLabel =
+                    listing.condition_label ??
+                    resolveConditionLabel(listing.condition_option_id ?? null, listing.condition);
+                  const sourceLabel =
+                    listing.source_label ??
+                    resolveSourceLabel(listing.source_option_id ?? listing.source);
+                  return (
+                      <TableRow key={listing.id}>
+                        <TableCell>
+                          <ListingAvatar listing={listing} />
+                        </TableCell>
+                        <TableCell className="max-w-[320px]">
+                          <a
+                            href={listing.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="line-clamp-2 font-medium hover:underline"
+                          >
+                            {listing.title ?? "Untitled listing"}
+                          </a>
+                          <p className="text-muted-foreground text-xs">
+                            {listing.location ?? "Unknown location"}
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          {formatCurrency(
+                            listing.price_cents,
+                            listing.currency ?? undefined,
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <PriceChangeBadge
+                            change={listing.price_change}
+                            current={listing.price_cents}
+                            previous={listing.previous_price_cents}
+                            currency={listing.currency ?? undefined}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm">
+                            {conditionLabel}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm">{categoryLabel}</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm">{platformLabel}</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">
+                              {formatActiveDuration(listing.first_seen_at)}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              Since {formatDate(listing.first_seen_at)}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatDate(listing.last_seen_at)}
+                        </TableCell>
+                        <TableCell>
+                          {sourceLabel}
+                        </TableCell>
+                      </TableRow>
+                  );
+                })}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -1959,6 +2662,28 @@ function buildConfigPayload(form: ConfigFormState): ScrapeConfigWritePayload {
   };
 }
 
+function parsePriceInput(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const normalized = Number(trimmed.replace(",", "."));
+  if (!Number.isFinite(normalized) || normalized < 0) {
+    return null;
+  }
+  return Math.round(normalized * 100);
+}
+
+function priceDeltaCents(listing: ListingResponse): number {
+  const current =
+    typeof listing.price_cents === "number" ? listing.price_cents : 0;
+  const previous =
+    typeof listing.previous_price_cents === "number"
+      ? listing.previous_price_cents
+      : current;
+  return current - previous;
+}
+
 function formatIdList(values?: number[] | null): string {
   if (!values || values.length === 0) return "";
   return values.join(",");
@@ -1999,6 +2724,50 @@ function formatDelaySeconds(value: unknown): string {
 
 function formatProxyFlag(value: boolean | null | undefined): string {
   return value === false ? "off" : "on";
+}
+
+function formatConditionLabel(value: string | null | undefined): string {
+  if (!value) return "Unknown";
+  const trimmed = value.trim();
+  if (!trimmed) return "Unknown";
+  return trimmed
+    .split(/\s+/)
+    .map(
+      (segment) =>
+        segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase(),
+    )
+    .join(" ");
+}
+
+function formatPlatformLabels(
+  platformIds: number[] | null | undefined,
+  lookup: Map<number, string>,
+): string {
+  if (!platformIds || platformIds.length === 0) {
+    return "None";
+  }
+  const uniqueIds = Array.from(
+    new Set(platformIds.filter((id): id is number => Number.isFinite(id))),
+  );
+  if (uniqueIds.length === 0) {
+    return "None";
+  }
+  const labels = uniqueIds.map((id) => lookup.get(id) ?? `#${id}`);
+  const displayed = labels.slice(0, 3).join(", ");
+  return uniqueIds.length > 3 ? `${displayed}, …` : displayed;
+}
+
+function formatSourceLabel(value: string | null | undefined): string {
+  if (!value) return "Unknown";
+  const normalized = value.trim().replace(/[_-]/g, " ");
+  if (!normalized) return "Unknown";
+  return normalized
+    .split(/\s+/)
+    .map(
+      (segment) =>
+        segment.charAt(0).toUpperCase() + segment.slice(1).toLowerCase(),
+    )
+    .join(" ");
 }
 
 function NumberField({
@@ -2181,20 +2950,49 @@ function PriceChangeBadge({
         ? "bg-red-500/10 text-red-500"
         : "bg-muted text-muted-foreground";
 
-  if (!previous) {
+  const Icon =
+    change === "up"
+      ? TrendingUp
+      : change === "down"
+        ? TrendingDown
+        : Minus;
+
+  const diff = current - previous;
+  const absDiffLabel = formatCurrency(Math.abs(diff), currency);
+  const diffLabel =
+    diff > 0 ? `+${absDiffLabel}` : diff < 0 ? `-${absDiffLabel}` : absDiffLabel;
+
+  if (diff === 0 || change === "same") {
     return (
-      <span className={cn("rounded-md px-2 py-1 text-xs font-medium", toneClasses)}>
-        {formatCurrency(current, currency)}
+      <span
+        className={cn(
+          "rounded-md px-2 py-1 text-xs font-medium inline-flex items-center gap-1",
+          toneClasses,
+        )}
+      >
+        <Icon className="size-3" />
+        No change · Prev {formatCurrency(previous, currency)}
       </span>
     );
   }
 
-  const delta = ((current - previous) / previous) * 100;
-  const formattedDelta = `${delta > 0 ? "+" : ""}${delta.toFixed(1)}%`;
+  const percent = previous !== 0 ? Math.abs((diff / previous) * 100) : null;
+  const percentLabel =
+    percent === null
+      ? null
+      : `${diff > 0 ? "+" : "-"}${percent.toFixed(1)}%`;
 
   return (
-    <span className={cn("rounded-md px-2 py-1 text-xs font-medium", toneClasses)}>
-      {formatCurrency(current, currency)} ({formattedDelta})
+    <span
+      className={cn(
+        "rounded-md px-2 py-1 text-xs font-medium inline-flex items-center gap-1",
+        toneClasses,
+      )}
+    >
+      <Icon className="size-3" />
+      {diffLabel}
+      {percentLabel ? ` (${percentLabel})` : ""} · Prev{" "}
+      {formatCurrency(previous, currency)}
     </span>
   );
 }

@@ -19,17 +19,25 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type RouteParams = {
-  params: {
-    path?: string[];
-  };
+  params: { path?: string[] } | Promise<{ path?: string[] }>;
 };
+
+async function resolveParams(
+  params: { path?: string[] } | Promise<{ path?: string[] }>,
+): Promise<{ path?: string[] } | undefined> {
+  if (typeof (params as Promise<unknown>)?.then === "function") {
+    return (params as Promise<{ path?: string[] }>).catch(() => undefined);
+  }
+  return params as { path?: string[] };
+}
 
 async function proxyRequest(
   request: NextRequest,
   context: RouteParams | Promise<RouteParams>,
 ) {
-  const resolved = await context;
-  const pathSegments = resolved?.params?.path ?? [];
+  const resolvedContext = await Promise.resolve(context);
+  const resolvedParams = await resolveParams(resolvedContext.params);
+  const pathSegments = resolvedParams?.path ?? [];
 
   if (!upstreamBaseUrl) {
     return NextResponse.json(
