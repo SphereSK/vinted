@@ -43,7 +43,24 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
+import { Badge, BadgeProps } from "@/components/ui/badge";
+
+function getConditionBadgeVariant(condition: string | null): BadgeProps["variant"] {
+  if (!condition) return "secondary";
+  const lower = condition.toLowerCase();
+  if (lower.includes("new")) return "success";
+  if (lower.includes("good")) return "default";
+  if (lower.includes("satisfactory")) return "outline";
+  return "secondary";
+}
+
+function getPlatformBadgeVariant(platform: string | null): BadgeProps["variant"] {
+  if (!platform) return "secondary";
+  const lower = platform.toLowerCase();
+  if (lower.includes("vinted")) return "success";
+  if (lower.includes("depop")) return "destructive";
+  return "secondary";
+}
 
 import { SortableHead } from "./SortableHead";
 import { ListingRow } from "./ListingRow";
@@ -284,6 +301,8 @@ export function ListingsSection({
                 key={listing.id}
                 listing={listing}
                 platformLookup={platformLookup}
+                getConditionBadgeVariant={getConditionBadgeVariant}
+                getPlatformBadgeVariant={getPlatformBadgeVariant}
               />
             ))}
           </TableBody>
