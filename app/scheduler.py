@@ -22,8 +22,8 @@ if not SCRAPER_COMMAND:
 DEFAULT_USE_PROXY = os.getenv("SCRAPER_USE_PROXY", "false").lower() in {"1", "true", "yes"}
 CRON_COMMENT_PREFIX = os.getenv("SCRAPER_CRON_COMMENT", "vinted-scraper")
 MAX_EXTRA_ARG_LENGTH = int(os.getenv("SCRAPER_EXTRA_ARG_MAX_LENGTH", "128"))
-SAFE_EXTRA_ARG_PATTERN = re.compile(r"^[A-Za-z0-9._:@%+=/,\[\]&?]+$")
-VALID_ORDERS = {"newest_first", "price_low_to_high", "price_high_to_to"}
+SAFE_EXTRA_ARG_PATTERN = re.compile(r"^[A-Za-z0-9._:@%+=/,-[ ]&?]+$")
+VALID_ORDERS = {"newest_first", "price_low_to_high", "price_high_to_low"}
 VALID_DETAIL_STRATEGIES = {"browser", "http"}
 LOCALE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{2,10}$")
 HEALTHCHECK_TIMEOUT = int(os.getenv("SCRAPER_HEALTHCHECK_TIMEOUT", "10"))
@@ -37,11 +37,11 @@ def _quote(value: object) -> str:
     return shlex.quote(str(value))
 
 
-def clear_redis_cache():
+def load_listings_to_cache():
     try:
-        requests.post("http://localhost:8000/api/listings/cache/clear")
+        requests.post("http://localhost:8000/api/listings/load")
     except requests.exceptions.RequestException as e:
-        print(f"Could not clear redis cache: {e}")
+        print(f"Could not load listings to cache: {e}")
 
 def validate_cron_expression(expression: str) -> str:
     """Validate a standard 5-field cron expression."""
@@ -183,7 +183,7 @@ def build_scrape_command(
     Parameters mirror the ScrapeConfig attributes and allow optional overrides.
     """
 
-    clear_redis_cache()
+    load_listings_to_cache()
 
     tokens = shlex.split(SCRAPER_COMMAND)
     if not tokens:
@@ -334,7 +334,7 @@ async def sync_crontab() -> None:
 
     # Write to system
     cron.write()
-    clear_redis_cache()
+    load_listings_to_cache()
 
 
 async def list_scheduled_jobs() -> list[dict[str, object]]:

@@ -73,6 +73,7 @@ async function proxyRequest(
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("content-length");
+  headers.delete("connection");
 
   if (apiKeyValue && !headers.has(apiKeyHeader)) {
     headers.set(apiKeyHeader, apiKeyValue);

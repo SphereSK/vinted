@@ -4,11 +4,12 @@ import random
 import os
 import time
 import requests
+from typing import Optional
 from app.scraper.browser import get_html_with_browser, init_driver
 from vinted_api_kit import VintedApi
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from app.db.models import Listing, PriceHistory
+from app.db.models import Listing, PriceHistory, ConditionOption
 from app.db.session import Session, init_db
 from app.scraper.parse_header import parse_catalog_page
 from app.scraper.parse_detail import parse_detail_html
@@ -78,6 +79,29 @@ HEADERS = {
 # -----------------------------------------------------
 # Database Helpers
 # -----------------------------------------------------
+async def get_or_create_condition_option(session, condition_name: str) -> Optional[int]:
+    """Find a condition by name or create it if it doesn't exist."""
+    if not condition_name:
+        return None
+
+    # Check if the condition option already exists
+    res = await session.execute(
+        select(ConditionOption).where(func.lower(ConditionOption.label) == func.lower(condition_name))
+    )
+    condition_option = res.scalar_one_or_none()
+
+    if condition_option:
+        return condition_option.id
+    else:
+        # Create a new one if it doesn't exist
+        # Generate a URL-friendly code from the name
+        code = condition_name.lower().replace(" ", "-").strip()
+        new_option = ConditionOption(code=code, label=condition_name)
+        session.add(new_option)
+        await session.flush()  # Flush to get the new ID
+        return new_option.id
+
+
 async def upsert_listing(session, data: dict):
     """Insert or update a listing based on URL (unique key).
 
@@ -122,6 +146,8 @@ async def upsert_listing(session, data: dict):
             "platform_ids": stmt.excluded.platform_ids,
             "last_seen_at": func.now(),
             "is_active": True,
+            "vinted_id": stmt.excluded.vinted_id,
+            "condition_option_id": stmt.excluded.condition_option_id,
         },
     ).returning(Listing)
     res = await session.execute(stmt)
@@ -441,6 +467,10 @@ async def _scrape_and_store_locale(
 
 # ... (rest of the file)
 
+                    condition_option_id = await get_or_create_condition_option(
+                        session, item.get("condition")
+                    )
+
                     merged = {
                         **item,
                         **details,
@@ -455,6 +485,7 @@ async def _scrape_and_store_locale(
                         "category_id": category_id,
                         "platform_ids": platform_ids,
                         "brand": standardize_brand(item.get("brand")),
+                        "condition_option_id": condition_option_id,
                     }
 
                     valid_cols = {col.name for col in Listing.__table__.columns}

@@ -12,4 +12,4 @@ if [ -d ".venv" ]; then
 fi
 
 # Run FastAPI server
-python3 -m app.api.main
+uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload
