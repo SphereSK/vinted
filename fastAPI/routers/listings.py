@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+import math
 
 from app.api.schemas import (
     ListingDetail,
@@ -17,6 +18,8 @@ from app.api.schemas import (
     PriceHistoryResponse,
     ConditionResponse,
     SourceResponse,
+    CategoryResponse,
+    PlatformResponse,
 )
 from app.db.models import (
     Listing,
@@ -48,6 +51,7 @@ SORTABLE_FIELDS = {
     "category_id": "category_id",
     "source": "source_option_id",
     "platform_ids": "platform_ids",
+    "price_change": "price_change",
 }
 
 
@@ -62,21 +66,23 @@ async def load_listings_to_cache(db: AsyncSession, redis):
     listings_query = select(Listing).options(selectinload(Listing.prices)).where(Listing.is_active.is_(True))
     listings_result = await db.execute(listings_query)
     listings = listings_result.scalars().all()
+    logger.info(f"Found {len(listings)} active listings to load into cache.")
 
     # Load master data for lookups
-    category_records = (await db.execute(select(CategoryOption.id, CategoryOption.name))).all()
+    category_records = (await db.execute(select(CategoryOption.id, CategoryOption.name, CategoryOption.color))).all()
     categories_map = {row.id: row.name for row in category_records}
     await redis.set("categories", json.dumps([row._asdict() for row in category_records]), ex=3600)
 
-    platform_records = (await db.execute(select(PlatformOption.id, PlatformOption.name))).all()
+    platform_records = (await db.execute(select(PlatformOption.id, PlatformOption.name, PlatformOption.color))).all()
+    platforms = [row._asdict() for row in platform_records]
     platforms_map = {row.id: row.name for row in platform_records}
     await redis.set("platforms", json.dumps([row._asdict() for row in platform_records]), ex=3600)
 
-    condition_records = (await db.execute(select(ConditionOption.id, ConditionOption.code, ConditionOption.label))).all()
+    condition_records = (await db.execute(select(ConditionOption.id, ConditionOption.code, ConditionOption.label, ConditionOption.color))).all()
     conditions_map = {row.id: row for row in condition_records}
     await redis.set("conditions", json.dumps([row._asdict() for row in condition_records]), ex=3600)
 
-    source_records = (await db.execute(select(SourceOption.id, SourceOption.code, SourceOption.label))).all()
+    source_records = (await db.execute(select(SourceOption.id, SourceOption.code, SourceOption.label, SourceOption.color))).all()
     sources_map = {row.id: row for row in source_records}
     await redis.set("sources", json.dumps([row._asdict() for row in source_records]), ex=3600)
 
@@ -88,7 +94,30 @@ async def load_listings_to_cache(db: AsyncSession, redis):
         logger.debug(f"Listing platform_ids: {listing.platform_ids}")
         logger.debug(f"Listing price_cents: {listing.price_cents}")
 
-        listing_dict = ListingResponse.from_orm(listing).model_dump()
+        listing_data = {
+            "id": listing.id,
+            "url": listing.url,
+            "first_seen_at": listing.first_seen_at,
+            "last_seen_at": listing.last_seen_at,
+            "is_active": listing.is_active,
+            "title": listing.title,
+            "price_cents": listing.price_cents,
+            "currency": listing.currency,
+            "brand": listing.brand,
+            "condition": listing.condition,
+            "location": listing.location,
+            "seller_name": listing.seller_name,
+            "photo": listing.photo,
+            "description": listing.description,
+            "language": listing.language,
+            "source": listing.source,
+            "category_id": listing.category_id,
+            "platform_ids": list(listing.platform_ids) if listing.platform_ids is not None else None,
+            "vinted_id": listing.vinted_id,
+            "condition_option_id": listing.condition_option_id,
+            "source_option_id": listing.source_option_id,
+        }
+        listing_dict = ListingResponse(**listing_data).model_dump()
 
         # Calculate price_change from PriceHistory
         previous_price_cents = None
@@ -128,17 +157,23 @@ async def load_listings_to_cache(db: AsyncSession, redis):
             source_obj = listing.source_option
             listing_dict["source_label"] = source_obj.label
             listing_dict["source_code"] = source_obj.code
+            listing_dict["source_option_id"] = source_obj.id
+        elif listing.source:
+            # Fallback: try to find source by code if source_option is not loaded
+            source_map_by_code = {s.code: s for s in sources_map.values()}
+            found_source = source_map_by_code.get(listing.source)
+            if found_source:
+                listing_dict["source_label"] = found_source.label
+                listing_dict["source_code"] = found_source.code
+                listing_dict["source_option_id"] = found_source.id
+            else:
+                listing_dict["source_label"] = None
+                listing_dict["source_code"] = None
+                listing_dict["source_option_id"] = None
         else:
             listing_dict["source_label"] = None
             listing_dict["source_code"] = None
-
-        # Populate platform_names
-        if listing.platform_ids:
-            listing_dict["platform_names"] = [
-                platforms_map.get(pid, f"#{pid}") for pid in listing.platform_ids
-            ]
-        else:
-            listing_dict["platform_names"] = []
+            listing_dict["source_option_id"] = None
 
         # Populate category_name
         if listing.category_id and listing.category_id in categories_map:
@@ -146,17 +181,27 @@ async def load_listings_to_cache(db: AsyncSession, redis):
         else:
             listing_dict["category_name"] = None
 
+        # Populate platform_names
+        if listing.platform_ids:
+            platform_names = []
+            for p_id in listing.platform_ids:
+                found_platform = next((p for p in platforms if p["id"] == p_id), None)
+                if found_platform:
+                    platform_names.append(found_platform["name"])
+            listing_dict["platform_names"] = platform_names
+        else:
+            listing_dict["platform_names"] = None
+
         # Convert datetime objects to ISO 8601 strings for JSON serialization
         for key, value in listing_dict.items():
             if isinstance(value, datetime):
                 listing_dict[key] = value.isoformat()
 
-        final_json_listing = json.dumps(listing_dict)
-        logger.debug(f"Final JSON for listing ID {listing.id}: {final_json_listing}")
-        enriched_listings.append(final_json_listing)
+        logger.debug(f"Final JSON for listing ID {listing.id}: {json.dumps(listing_dict)}")
+        enriched_listings.append(listing_dict)
 
     await redis.set("listings", json.dumps(enriched_listings), ex=3600)
-    logger.info("Listings loaded to cache.")
+    logger.info(f"Cached {len(enriched_listings)} listings.")
 
 
 @router.post("/listings/load")
@@ -198,155 +243,157 @@ async def list_listings(
     # Construct a cache key based on the query parameters
     cache_key = f"listings:{search}:{active_only}:{sort_field}:{sort_order}:{currency}:{price_min}:{price_max}:{condition_id}:{condition}:{category_id}:{platform_id}:{source_id}:{source}:{page}:{page_size}"
 
-    # Try to fetch the data from the cache
+    # Try to fetch the specific paginated/filtered data from the cache first
+    logger.info(f"Attempting to fetch specific query from cache with key: {cache_key}")
     cached_data = await redis.get(cache_key)
     if cached_data:
-        logger.info("Serving from cache")
+        logger.info("Serving specific query from cache")
+        logger.debug(f"Cached data content: {cached_data[:500]}...")
         return json.loads(cached_data)
 
-    logger.info("Serving from database")
+    logger.info("Specific query not in cache, loading all listings from main cache or DB.")
 
-    # Build the query
-    query = select(Listing).options(selectinload(Listing.prices))
+    # Load all enriched listings from the main cache
+    all_listings_json = await redis.get("listings")
+    if not all_listings_json:
+        logger.info("Main 'listings' cache is empty, loading from database via load_listings_to_cache...")
+        await load_listings_to_cache(db, redis)
+        all_listings_json = await redis.get("listings") # Re-fetch after loading
+        if not all_listings_json:
+            raise HTTPException(status_code=500, detail="Failed to load listings into cache.")
+        logger.info("Main 'listings' cache populated.")
 
-    if active_only:
-        query = query.where(Listing.is_active.is_(True))
-    if search:
-        query = query.where(Listing.title.ilike(f"%{search}%"))
-    if currency:
-        query = query.where(Listing.currency == currency)
-    if price_min is not None:
-        query = query.where(Listing.price_cents >= price_min)
-    if price_max is not None:
-        query = query.where(Listing.price_cents <= price_max)
-    if condition_id is not None:
-        query = query.where(Listing.condition_option_id == condition_id)
-    if category_id is not None:
-        query = query.where(Listing.category_id == category_id)
-    if platform_id is not None:
-        query = query.where(Listing.platform_ids.contains([platform_id]))
-    if source_id is not None:
-        query = query.where(Listing.source_option_id == source_id)
+    all_listings = json.loads(all_listings_json)
+    logger.info(f"Loaded {len(all_listings)} listings from main cache.")
 
-    # Sorting
-    sort_column = SORTABLE_FIELDS.get(sort_field.lower())
-    if sort_column:
-        if sort_order == "desc":
-            query = query.order_by(getattr(Listing, sort_column).desc())
+    # Load master data for lookups (these should also be cached by load_listings_to_cache)
+    categories_data = await redis.get("categories")
+    categories = json.loads(categories_data) if categories_data else []
+    platforms_data = await redis.get("platforms")
+    platforms = json.loads(platforms_data) if platforms_data else []
+    conditions_data = await redis.get("conditions")
+    conditions = json.loads(conditions_data) if conditions_data else []
+    sources_data = await redis.get("sources")
+    sources = json.loads(sources_data) if sources_data else []
+
+    # Create maps for quick lookup
+    categories_map = {c["id"]: c["name"] for c in categories}
+    sources_map = {s["code"]: s for s in sources}
+    conditions_map = {c["id"]: c for c in conditions} # For condition filtering by code/label
+
+    # Apply filters in-memory
+    filtered_listings = []
+    for listing in all_listings:
+        if active_only and not listing.get("is_active"):
+            continue
+        if search and search.lower() not in listing.get("title", "").lower():
+            continue
+        if currency and listing.get("currency") != currency:
+            continue
+        if price_min is not None and listing.get("price_cents", 0) < price_min:
+            continue
+        if price_max is not None and listing.get("price_cents", 0) > price_max:
+            continue
+        if condition_id is not None and listing.get("condition_option_id") != condition_id:
+            continue
+        if condition:
+            # Normalize the query condition for comparison
+            _, query_condition_code, query_condition_label = normalize_condition(condition)
+            listing_condition_code = listing.get("condition_code")
+            listing_condition_label = listing.get("condition_label")
+
+            if not (listing_condition_code == query_condition_code or listing_condition_label == query_condition_label):
+                continue
+        if category_id is not None and listing.get("category_id") != category_id:
+            continue
+        if platform_id is not None and listing.get("platform_ids") and platform_id not in listing["platform_ids"]:
+            continue
+        if source_id is not None and listing.get("source_option_id") != source_id:
+            continue
+        if source:
+            listing_source_code = listing.get("source_code")
+            if not (listing_source_code and listing_source_code == source):
+                continue
+
+        filtered_listings.append(listing)
+
+    logger.info(f"After filtering, {len(filtered_listings)} listings remain.")
+
+    # Apply sorting in-memory
+    if sort_field in SORTABLE_FIELDS:
+        if sort_field == "price_change":
+            # Define a custom order for price_change
+            # 'down' (price decreased) is generally more interesting for 'desc' sort
+            # 'up' (price increased) is generally more interesting for 'asc' sort
+            price_change_order = {"down": 1, "same": 2, "up": 3, None: 4}
+            if sort_order == "asc":
+                price_change_order = {"up": 1, "same": 2, "down": 3, None: 4}
+
+            filtered_listings.sort(key=lambda item: price_change_order.get(item.get("price_change"), 4), reverse=False) # Reverse is handled by custom order
         else:
-            query = query.order_by(getattr(Listing, sort_column).asc())
+            # Determine the actual key to sort by in the dictionary
+            actual_sort_key = SORTABLE_FIELDS[sort_field]
 
-    # Pagination
+            # Handle potential missing keys or None values during sorting
+            def get_sort_value(item):
+                value = item.get(actual_sort_key)
+                # Convert datetime strings back to datetime objects for proper sorting if needed
+                if isinstance(value, str) and ('_at' in actual_sort_key or 'seen_at' in actual_sort_key):
+                    try:
+                        return datetime.fromisoformat(value)
+                    except ValueError:
+                        pass # Fallback to string comparison if parsing fails
+                return value
+
+            filtered_listings.sort(key=get_sort_value, reverse=(sort_order == "desc"))
+    else:
+        logger.warning(f"Invalid sort_field: {sort_field}. Skipping sorting.")
+
+    # Apply pagination in-memory
+    total = len(filtered_listings)
     if limit:
-        query = query.limit(limit)
-        total = limit
-        page = 1
+        paginated_listings = filtered_listings[:limit]
+        page = 1 # When limit is used, page and page_size are effectively overridden
         page_size = limit
     else:
-        # Count the total number of items
-        total_query = select(func.count()).select_from(query.subquery())
-        total_result = await db.execute(total_query)
-        total = total_result.scalar_one()
-
-        # Pagination
         offset = (page - 1) * page_size
-        query = query.offset(offset).limit(page_size)
+        paginated_listings = filtered_listings[offset : offset + page_size]
 
-    # Execute the query
-    listings_result = await db.execute(query)
-    listings = listings_result.scalars().all()
+    total_pages = int(math.ceil(total / page_size)) if page_size > 0 else 1
 
-    # Enrich the listings with related data
-    enriched_listings = []
-    for listing in listings:
-        listing_dict = ListingResponse.from_orm(listing).model_dump()
+    # Prepare the response
+    # Extract unique values from all_listings for available filters
+    unique_currencies = sorted(list(set(l["currency"] for l in all_listings if l["currency"])))
+    unique_condition_ids = set(l["condition_option_id"] for l in all_listings if l.get("condition_option_id"))
+    unique_category_ids = set(l["category_id"] for l in all_listings if l.get("category_id"))
+    unique_platform_ids_flat = set()
+    for l in all_listings:
+        if l.get("platform_ids"):
+            unique_platform_ids_flat.update(l["platform_ids"])
+    unique_source_ids = set(l["source_option_id"] for l in all_listings if l.get("source_option_id"))
 
-        # Calculate price_change from PriceHistory
-        previous_price_cents = None
-        if listing.prices:
-            sorted_prices = sorted(listing.prices, key=lambda p: p.observed_at, reverse=True)
-            for price_entry in sorted_prices:
-                if price_entry.price_cents is not None and price_entry.price_cents != listing.price_cents:
-                    previous_price_cents = price_entry.price_cents
-                    break
-
-        if listing.price_cents is not None and previous_price_cents is not None:
-            if listing.price_cents > previous_price_cents:
-                listing_dict["price_change"] = "up"
-            elif listing.price_cents < previous_price_cents:
-                listing_dict["price_change"] = "down"
-            else:
-                listing_dict["price_change"] = "same"
-            listing_dict["previous_price_cents"] = previous_price_cents
-        else:
-            listing_dict["price_change"] = None
-            listing_dict["previous_price_cents"] = None
-
-        # Populate condition_label and condition_code
-        if listing.condition_option:
-            condition_obj = listing.condition_option
-            listing_dict["condition_label"] = condition_obj.label
-            listing_dict["condition_code"] = condition_obj.code
-        elif listing.condition:
-            _, listing_dict["condition_code"], listing_dict["condition_label"] = normalize_condition(listing.condition)
-        else:
-            listing_dict["condition_label"] = None
-            listing_dict["condition_code"] = None
-
-        # Populate source_label and source_code
-        if listing.source_option:
-            source_obj = listing.source_option
-            listing_dict["source_label"] = source_obj.label
-            listing_dict["source_code"] = source_obj.code
-        else:
-            listing_dict["source_label"] = None
-            listing_dict["source_code"] = None
-
-        # Populate platform_names
-        if listing.platform_ids:
-            platform_records = (await db.execute(select(PlatformOption.id, PlatformOption.name).where(PlatformOption.id.in_(listing.platform_ids)))).all()
-            platforms_map = {row.id: row.name for row in platform_records}
-            listing_dict["platform_names"] = [
-                platforms_map.get(pid, f"#{pid}") for pid in listing.platform_ids
-            ]
-        else:
-            listing_dict["platform_names"] = []
-
-        # Populate category_name
-        if listing.category_id:
-            category_record = (await db.execute(select(CategoryOption.name).where(CategoryOption.id == listing.category_id))).scalar_one_or_none()
-            listing_dict["category_name"] = category_record
-        else:
-            listing_dict["category_name"] = None
-
-        # Convert datetime objects to ISO 8601 strings for JSON serialization
-        for key, value in listing_dict.items():
-            if isinstance(value, datetime):
-                listing_dict[key] = value.isoformat()
-
-        enriched_listings.append(listing_dict)
-
-    # Master data
-    categories = json.loads(await redis.get("categories") or "[]")
-    platforms = json.loads(await redis.get("platforms") or "[]")
-    conditions = json.loads(await redis.get("conditions") or "[]")
-    sources = json.loads(await redis.get("sources") or "[]")
+    filtered_available_conditions = [ConditionResponse(**c) for c in conditions if c["id"] in unique_condition_ids]
+    filtered_available_categories = [CategoryResponse(**c) for c in categories if c["id"] in unique_category_ids]
+    filtered_available_platforms = [PlatformResponse(**p) for p in platforms if p["id"] in unique_platform_ids_flat]
+    filtered_available_sources = [SourceResponse(**s) for s in sources if s["id"] in unique_source_ids]
 
     response = ListingListResponse(
-        items=enriched_listings,
+        items=paginated_listings,
         total=total,
         page=page,
         page_size=page_size,
+        total_pages=total_pages,
         has_next=(page * page_size) < total,
-        available_currencies=sorted(list(set(l["currency"] for l in enriched_listings if l["currency"]))),
-        available_conditions=[ConditionResponse(**c) for c in conditions],
-        available_category_ids=[c["id"] for c in categories],
-        available_platform_ids=[p["id"] for p in platforms],
-        available_sources=[SourceResponse(**s) for s in sources],
+        available_currencies=unique_currencies,
+        available_conditions=filtered_available_conditions,
+        available_categories=filtered_available_categories,
+        available_platforms=filtered_available_platforms,
+        available_sources=filtered_available_sources,
     )
 
-    # Cache the response
+    # Cache the response for this specific query
     await redis.set(cache_key, response.model_dump_json(), ex=3600)
+    logger.info(f"Cached specific query result for key: {cache_key}")
 
     return response
 

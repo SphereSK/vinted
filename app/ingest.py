@@ -9,7 +9,7 @@ from app.scraper.browser import get_html_with_browser, init_driver
 from vinted_api_kit import VintedApi
 from sqlalchemy import select, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from app.db.models import Listing, PriceHistory, ConditionOption
+from app.db.models import Listing, PriceHistory, ConditionOption, SourceOption, CategoryOption, PlatformOption
 from app.db.session import Session, init_db
 from app.scraper.parse_header import parse_catalog_page
 from app.scraper.parse_detail import parse_detail_html
@@ -102,6 +102,44 @@ async def get_or_create_condition_option(session, condition_name: str) -> Option
         return new_option.id
 
 
+async def get_or_create_category_option(session, category_name: str) -> Optional[int]:
+    """Find a category by name or create it if it doesn't exist."""
+    if not category_name:
+        return None
+
+    res = await session.execute(
+        select(CategoryOption).where(func.lower(CategoryOption.name) == func.lower(category_name))
+    )
+    category_option = res.scalar_one_or_none()
+
+    if category_option:
+        return category_option.id
+    else:
+        new_option = CategoryOption(name=category_name)
+        session.add(new_option)
+        await session.flush()
+        return new_option.id
+
+
+async def get_or_create_platform_option(session, platform_name: str) -> Optional[int]:
+    """Find a platform by name or create it if it doesn't exist."""
+    if not platform_name:
+        return None
+
+    res = await session.execute(
+        select(PlatformOption).where(func.lower(PlatformOption.name) == func.lower(platform_name))
+    )
+    platform_option = res.scalar_one_or_none()
+
+    if platform_option:
+        return platform_option.id
+    else:
+        new_option = PlatformOption(name=platform_name)
+        session.add(new_option)
+        await session.flush()
+        return new_option.id
+
+
 async def upsert_listing(session, data: dict):
     """Insert or update a listing based on URL (unique key).
 
@@ -148,6 +186,9 @@ async def upsert_listing(session, data: dict):
             "is_active": True,
             "vinted_id": stmt.excluded.vinted_id,
             "condition_option_id": stmt.excluded.condition_option_id,
+            "source_option_id": stmt.excluded.source_option_id,
+            "category_id": stmt.excluded.category_id,
+            "platform_ids": stmt.excluded.platform_ids,
         },
     ).returning(Listing)
     res = await session.execute(stmt)
@@ -470,6 +511,24 @@ async def _scrape_and_store_locale(
                     condition_option_id = await get_or_create_condition_option(
                         session, item.get("condition")
                     )
+                    # Assuming 'vinted' source has ID 1 in SourceOption table
+                    source_option_id = 1 # Directly set source_option_id to 1
+
+                    # Determine category_id
+                    final_category_id = category_id
+                    if not final_category_id and item.get("category"):
+                        final_category_id = await get_or_create_category_option(session, item.get("category"))
+
+                    # Determine platform_ids
+                    final_platform_ids = platform_ids
+                    if not final_platform_ids and item.get("platform_names"):
+                        platform_names_from_item = item.get("platform_names", [])
+                        platform_ids_from_item = []
+                        for p_name in platform_names_from_item:
+                            p_id = await get_or_create_platform_option(session, p_name)
+                            if p_id: # Ensure ID is not None
+                                platform_ids_from_item.append(p_id)
+                        final_platform_ids = platform_ids_from_item
 
                     merged = {
                         **item,
@@ -481,11 +540,12 @@ async def _scrape_and_store_locale(
                         if item.get("price")
                         else None,
                         "language": detected_lang,
-                        "source": "vinted",
-                        "category_id": category_id,
-                        "platform_ids": platform_ids,
+                        # "source": item.get("source"), # Removed as source_option_id is used
+                        "category_id": final_category_id,
+                        "platform_ids": final_platform_ids,
                         "brand": standardize_brand(item.get("brand")),
                         "condition_option_id": condition_option_id,
+                        "source_option_id": source_option_id,
                     }
 
                     valid_cols = {col.name for col in Listing.__table__.columns}

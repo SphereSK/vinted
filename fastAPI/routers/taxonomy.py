@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import APIRouter, Depends
 
-from app.api.schemas import CategoryResponse, ConditionResponse, SourceResponse
+from app.api.schemas import CategoryResponse, ConditionResponse, SourceResponse, PlatformResponse
 from app.db.models import (
     CategoryOption,
     PlatformOption,
@@ -27,18 +27,18 @@ async def list_categories(db: AsyncSession = Depends(get_db)) -> list[CategoryRe
         select(CategoryOption).order_by(CategoryOption.name.asc())
         )
     ).scalars().all()
-    return [CategoryResponse(id=row.id, name=row.name) for row in records]
+    return [CategoryResponse(id=row.id, name=row.name, color=row.color) for row in records]
 
 
-@router.get("/platforms", response_model=list[CategoryResponse])
-async def list_platforms(db: AsyncSession = Depends(get_db)) -> list[CategoryResponse]:
+@router.get("/platforms", response_model=list[PlatformResponse])
+async def list_platforms(db: AsyncSession = Depends(get_db)) -> list[PlatformResponse]:
     """Return available platforms from the master data table."""
     records = (
         await db.execute(
         select(PlatformOption).order_by(PlatformOption.name.asc())
         )
     ).scalars().all()
-    return [CategoryResponse(id=row.id, name=row.name) for row in records]
+    return [PlatformResponse(id=row.id, name=row.name, color=row.color) for row in records]
 
 
 @router.get("/conditions", response_model=list[ConditionResponse])
@@ -51,7 +51,7 @@ async def list_conditions(
             select(ConditionOption).order_by(ConditionOption.label.asc())
         )
     ).scalars().all()
-    return [ConditionResponse(id=row.id, code=row.code, label=row.label) for row in records]
+    return [ConditionResponse(id=row.id, code=row.code, label=row.label, color=row.color) for row in records]
 
 
 @router.get("/sources", response_model=list[SourceResponse])
@@ -64,4 +64,4 @@ async def list_sources(
             select(SourceOption).order_by(SourceOption.label.asc())
         )
     ).scalars().all()
-    return [SourceResponse(id=row.id, code=row.code, label=row.label) for row in records]
+    return [SourceResponse(id=row.id, code=row.code, label=row.label, color=row.color) for row in records]

@@ -61,7 +61,9 @@ async def list_configs(
 
     query = query.order_by(ScrapeConfig.created_at.desc())
     result = await db.execute(query)
-    return result.scalars().all()
+    configs = result.scalars().all()
+    print(f"DEBUG: list_configs retrieved {len(configs)} configurations from the database.")
+    return configs
 
 
 @router.post("", response_model=ScrapeConfigResponse, status_code=201)

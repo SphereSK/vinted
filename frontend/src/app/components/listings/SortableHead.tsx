@@ -19,7 +19,7 @@ export function SortableHead({
   sortOrder,
   onSort,
 }: SortableHeadProps) {
-  function getSortIcon() {
+  const getSortIcon = () => {
     if (currentField !== field) {
       return <ChevronsUpDown className="size-3 text-muted-foreground" />;
     }
@@ -28,7 +28,7 @@ export function SortableHead({
     ) : (
       <ChevronDown className="size-3 text-muted-foreground" />
     );
-  }
+  };
 
   return (
     <TableHead

@@ -5,18 +5,21 @@ import { Badge } from "@/components/ui/badge";
 import { ListingAvatar } from "../common/ListingAvatar";
 import { PriceChangeBadge } from "../common/PriceChangeBadge";
 import { formatCurrency, formatDate, formatActiveDuration } from "@/lib/format";
-import type { ListingResponse } from "@/lib/types";
-
-import type { BadgeProps } from "@/components/ui/badge";
+import type { ListingResponse, ConditionResponse, PlatformResponse, SourceResponse, CategoryResponse } from "@/lib/types";
 
 interface ListingRowProps {
   listing: ListingResponse;
-  platformLookup: Map<number, string>;
-  getConditionBadgeVariant: (condition: string | null) => BadgeProps["variant"];
-  getPlatformBadgeVariant: (platform: string | null) => BadgeProps["variant"];
+  conditions: ConditionResponse[];
+  platforms: PlatformResponse[];
+  sources: SourceResponse[];
+  categories: CategoryResponse[];
 }
 
-export function ListingRow({ listing, platformLookup, getConditionBadgeVariant, getPlatformBadgeVariant }: ListingRowProps) {
+export function ListingRow({ listing, conditions, platforms, sources, categories }: ListingRowProps) {
+  const condition = conditions.find(c => c.label === listing.condition_label);
+  const source = sources.find(s => s.label === listing.source_label);
+  const category = categories.find(cat => cat.id === listing.category_id);
+
   return (
     <TableRow>
       <TableCell className="flex items-center gap-3">
@@ -46,21 +49,44 @@ export function ListingRow({ listing, platformLookup, getConditionBadgeVariant, 
 
       <TableCell>
         <div className="flex flex-wrap gap-1">
-          {listing.condition_label && <Badge variant={getConditionBadgeVariant(listing.condition_label)}>{listing.condition_label}</Badge>}
+          {listing.condition_label && condition && (
+            <Badge style={condition.color ? { backgroundColor: condition.color } : {}}>
+              {listing.condition_label}
+            </Badge>
+          )}
         </div>
       </TableCell>
 
       <TableCell>
         <div className="flex flex-wrap gap-1">
-          {listing.platform_names?.map((platform) => (
-            <Badge key={platform} variant={getPlatformBadgeVariant(platform)}>{platform}</Badge>
-          ))}
+          {listing.category_name && category && (
+            <Badge style={category.color ? { backgroundColor: category.color } : {}}>
+              {listing.category_name}
+            </Badge>
+          )}
         </div>
       </TableCell>
 
       <TableCell>
         <div className="flex flex-wrap gap-1">
-          {listing.source_label && <Badge variant="secondary">{listing.source_label}</Badge>}
+          {listing.platform_names?.map((platformName) => {
+            const platform = platforms.find(p => p.name === platformName);
+            return (
+              <Badge key={platformName} style={platform?.color ? { backgroundColor: platform.color } : {}}>
+                {platformName}
+              </Badge>
+            );
+          })}
+        </div>
+      </TableCell>
+
+      <TableCell>
+        <div className="flex flex-wrap gap-1">
+          {listing.source_label && source && (
+            <Badge style={source.color ? { backgroundColor: source.color } : {}}>
+              {listing.source_label}
+            </Badge>
+          )}
         </div>
       </TableCell>
 

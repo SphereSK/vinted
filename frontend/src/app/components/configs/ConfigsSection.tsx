@@ -38,6 +38,7 @@ export function ConfigsSection({
   onRun,
   onDelete,
 }: ConfigsSectionProps) {
+  console.log("ConfigsSection received configs:", configs);
   if (!configs.length) {
     return (
       <Card>

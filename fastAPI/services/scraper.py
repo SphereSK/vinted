@@ -1,16 +1,17 @@
-"""Utilities for coordinating manual scraper runs from the FastAPI service."""
-from __future__ import annotations
-
 import asyncio
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
+import sys
+from pathlib import Path
 
 from sqlalchemy import func, select
 
 from app.db.models import Listing, ScrapeConfig
 from app.db.session import Session, init_db
-from app.scheduler import build_scrape_command
+from app.scheduler import build_scrape_command #, load_listings_to_cache_async
 from fastAPI.redis import set_config_status
+from app.utils.logging import get_logger
 
 
 class RunInProgressError(RuntimeError):
@@ -19,7 +20,10 @@ class RunInProgressError(RuntimeError):
 
 _active_runs: dict[int, asyncio.Task[None]] = {}
 _lock = asyncio.Lock()
+logger = get_logger(__name__)
 
+PROJECT_ROOT = Path(os.getenv("SCRAPER_WORKDIR", Path(__file__).resolve().parents[2])) # Adjust PROJECT_ROOT for this file
+LOG_FILE = PROJECT_ROOT / "logs" / "cron.log"
 
 async def schedule_manual_run(config: ScrapeConfig) -> None:
     """
@@ -43,7 +47,16 @@ async def schedule_manual_run(config: ScrapeConfig) -> None:
 
 async def _cleanup(config_id: int, task: asyncio.Task[None]) -> None:
     try:
+        # Await the task to propagate any exceptions it might have raised
         await task
+    except Exception as exc:
+        # If the task raised an exception, update the status to failed
+        logger.error(f"Scrape task for config {config_id} failed during cleanup: {exc}", exc_info=True)
+        await _update_status(
+            config_id,
+            "failed",
+            message=f"Scrape task failed: {exc}",
+        )
     finally:
         async with _lock:
             _active_runs.pop(config_id, None)
@@ -119,24 +132,40 @@ async def _execute_manual_run(config_data: Dict[str, Any]) -> None:
         )
 
         process = await asyncio.create_subprocess_shell(command)
-        return_code = await process.wait()
 
-        if return_code == 0:
-            count_after = await _count_listings()
-            new_items = max(count_after - count_before, 0)
-            await _update_status(
-                config_id,
-                "success",
-                items=new_items,
-                message=f"Scrape completed successfully ({new_items} new items)",
-            )
-        else:
-            await _update_status(
-                config_id,
-                "failed",
-                message=f"Scrape command exited with code {return_code}",
-            )
+        logger.info(f"Started scrape subprocess for config {config_id} with PID: {process.pid}")
+
+        # Create a detached task to wait for the subprocess and update status
+        async def _monitor_subprocess(pid: int, config_id: int, count_before: int):
+            try:
+                return_code = await process.wait()
+                if return_code == 0:
+                    count_after = await _count_listings()
+                    new_items = max(count_after - count_before, 0)
+                    await _update_status(
+                        config_id,
+                        "success",
+                        items=new_items,
+                        message=f"Scrape completed successfully ({new_items} new items)",
+                    )
+                else:
+                    await _update_status(
+                        config_id,
+                        "failed",
+                        message=f"Scrape command exited with code {return_code}",
+                    )
+            except Exception as exc:
+                logger.error(f"Error monitoring subprocess for config {config_id}: {exc}", exc_info=True)
+                await _update_status(
+                    config_id,
+                    "failed",
+                    message=f"Scrape monitoring failed: {exc}",
+                )
+
+        asyncio.create_task(_monitor_subprocess(process.pid, config_id, count_before))
+
     except Exception as exc:  # pragma: no cover - defensive
+        logger.error(f"Scrape for config {config_id} failed: {exc}", exc_info=True)
         await _update_status(
             config_id,
             "failed",

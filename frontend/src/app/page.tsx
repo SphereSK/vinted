@@ -56,7 +56,7 @@ export default function VintedControlCenter() {
 
   const { data: configs = [], isLoading: configsLoading } = useQuery<ScrapeConfigResponse[]>({
     queryKey: ["configs"],
-    queryFn: listScrapeConfigs,
+    queryFn: () => listScrapeConfigs(undefined),
   });
 
   const { data: cronJobs = [], isLoading: cronLoading, error: cronError } = useQuery<CronJobEntry[]>({
@@ -209,6 +209,7 @@ export default function VintedControlCenter() {
             platforms={platforms}
             conditions={conditions}
             sources={sources}
+            categories={categories}
             listingsPage={listingsPage}
             isLoading={listingsLoading}
             onQueryChange={handleListingsQueryChange}

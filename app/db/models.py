@@ -18,6 +18,7 @@ class CategoryOption(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    color: Mapped[Optional[str]] = mapped_column(String(7))
 
     __table_args__ = (
         {"schema": settings.schema} if settings.database_url.startswith("postgresql") else {},
@@ -29,6 +30,7 @@ class PlatformOption(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    color: Mapped[Optional[str]] = mapped_column(String(7))
 
     __table_args__ = (
         {"schema": settings.schema} if settings.database_url.startswith("postgresql") else {},
@@ -41,6 +43,7 @@ class ConditionOption(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     label: Mapped[str] = mapped_column(String(128), nullable=False)
+    color: Mapped[Optional[str]] = mapped_column(String(7))
 
     __table_args__ = (
         {"schema": settings.schema} if settings.database_url.startswith("postgresql") else {},
@@ -53,6 +56,7 @@ class SourceOption(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     label: Mapped[str] = mapped_column(String(128), nullable=False)
+    color: Mapped[Optional[str]] = mapped_column(String(7))
 
     __table_args__ = (
         {"schema": settings.schema} if settings.database_url.startswith("postgresql") else {},

@@ -5,9 +5,6 @@ import { useQueryClient, QueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
-  ChevronDown,
-  ChevronsUpDown,
   Loader2,
   RefreshCcw,
 } from "lucide-react";
@@ -43,24 +40,7 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { Badge, BadgeProps } from "@/components/ui/badge";
-
-function getConditionBadgeVariant(condition: string | null): BadgeProps["variant"] {
-  if (!condition) return "secondary";
-  const lower = condition.toLowerCase();
-  if (lower.includes("new")) return "success";
-  if (lower.includes("good")) return "default";
-  if (lower.includes("satisfactory")) return "outline";
-  return "secondary";
-}
-
-function getPlatformBadgeVariant(platform: string | null): BadgeProps["variant"] {
-  if (!platform) return "secondary";
-  const lower = platform.toLowerCase();
-  if (lower.includes("vinted")) return "success";
-  if (lower.includes("depop")) return "destructive";
-  return "secondary";
-}
+import { Badge } from "@/components/ui/badge";
 
 import { SortableHead } from "./SortableHead";
 import { ListingRow } from "./ListingRow";
@@ -72,6 +52,7 @@ import type {
   ListingsQuery,
   SourceResponse,
   ListingSortField,
+  PlatformResponse,
 } from "@/lib/types";
 
 import { ListingAvatar } from "../common/ListingAvatar";
@@ -86,9 +67,10 @@ const PAGE_SIZE_OPTIONS = [15, 30, 50, 100] as const;
   Main Section
 ───────────────────────────────────────────────*/
 interface ListingsSectionProps {
-  platforms?: CategoryResponse[];
+  platforms?: PlatformResponse[];
   conditions?: ConditionResponse[];
   sources?: SourceResponse[];
+  categories?: CategoryResponse[];
   listingsPage: ListingsPage | null;
   isLoading: boolean;
   onQueryChange: (query: Partial<ListingsQuery>) => void;
@@ -100,16 +82,14 @@ export function ListingsSection({
   platforms = [],
   conditions = [],
   sources = [],
+  categories = [],
   listingsPage,
   isLoading,
   onQueryChange,
   query,
   queryClient,
 }: ListingsSectionProps) {
-  const platformLookup = useMemo(
-    () => new Map(platforms.map((p) => [p.id, p.name])),
-    [platforms],
-  );
+
 
   const handlePageChange = useCallback((newPage: number) => {
     onQueryChange({ page: newPage });
@@ -155,36 +135,36 @@ export function ListingsSection({
 
           <Input
             placeholder="Min price..."
-            value={query.price_min_cents ? query.price_min_cents / 100 : ""}
-            onChange={(e) => onQueryChange({ price_min_cents: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined })}
+            value={query.price_min ?? ''}
+            onChange={(e) => onQueryChange({ price_min: e.target.value ? Number(e.target.value) : undefined })}
             className="w-[120px]"
             type="number"
             step="0.01"
           />
           <Input
             placeholder="Max price..."
-            value={query.price_max_cents ? query.price_max_cents / 100 : ""}
-            onChange={(e) => onQueryChange({ price_max_cents: e.target.value ? Math.round(parseFloat(e.target.value) * 100) : undefined })}
+            value={query.price_max ?? ''}
+            onChange={(e) => onQueryChange({ price_max: e.target.value ? Number(e.target.value) : undefined })}
             className="w-[120px]"
             type="number"
             step="0.01"
           />
 
-          <Select value={query.condition ?? "ALL"} onValueChange={(value) => onQueryChange({ condition: value === "ALL" ? undefined : value })}>
+          <Select value={query.condition?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ condition: value === "ALL" ? undefined : Number(value) })}>
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Condition" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Conditions</SelectItem>
               {conditions.map((cond) => (
-                <SelectItem key={cond.id} value={cond.code}>
+                <SelectItem key={cond.id} value={cond.id.toString()}>
                   {cond.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
 
-          <Select value={query.platform_id?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ platform_id: value === "ALL" ? undefined : parseInt(value) })}>
+          <Select value={query.platform?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ platform: value === "ALL" ? undefined : Number(value) })}>
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Platform" />
             </SelectTrigger>
@@ -198,27 +178,47 @@ export function ListingsSection({
             </SelectContent>
           </Select>
 
-          <Select value={query.source ?? "ALL"} onValueChange={(value) => onQueryChange({ source: value === "ALL" ? undefined : value })}>
+          <Select value={query.source?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ source: value === "ALL" ? undefined : Number(value) })}>
             <SelectTrigger className="w-[150px]">
               <SelectValue placeholder="Source" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Sources</SelectItem>
               {sources.map((src) => (
-                <SelectItem key={src.id} value={src.code}>
+                <SelectItem key={src.id} value={src.id.toString()}>
                   {src.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
 
-          <Select value={query.currency ?? "ALL"} onValueChange={(value) => onQueryChange({ currency: value === "ALL" ? undefined : value })}>
+          <Select value={query.category?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ category: value === "ALL" ? undefined : Number(value) })}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Categories</SelectItem>
+              {categories.map((cat) => (
+                <SelectItem key={cat.id} value={cat.id.toString()}>
+                  {cat.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+
+          <Select value={query.sort_order ?? "ALL"} onValueChange={(value) => onQueryChange({ currency: value === "ALL" ? undefined : value })}>
             <SelectTrigger className="w-[100px]">
               <SelectValue placeholder="Currency" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All</SelectItem>
-              {(listingsPage?.available_currencies ?? []).map((cur) => (
+              {(listingsPage?.items.reduce((acc, item) => {
+                if (item.currency && !acc.includes(item.currency)) {
+                  acc.push(item.currency);
+                }
+                return acc;
+              }, [] as string[]) ?? []).map((cur) => (
                 <SelectItem key={cur} value={cur}>
                   {cur}
                 </SelectItem>
@@ -250,66 +250,113 @@ export function ListingsSection({
           No listings found.
         </div>
       ) : (
-        <Table className="w-full">
-          <TableHeader>
-            <TableRow>
-              <SortableHead
-                label="Title"
-                field="title"
-                currentField={query.sort_field}
-                sortOrder={query.sort_order}
-                onSort={toggleSort}
-              />
-              <SortableHead
-                label="Price"
-                field="price"
-                currentField={query.sort_field}
-                sortOrder={query.sort_order}
-                onSort={toggleSort}
-              />
-              <TableHead>Change</TableHead>
-              <SortableHead
-                label="Condition"
-                field="condition"
-                currentField={query.sort_field}
-                sortOrder={query.sort_order}
-                onSort={toggleSort}
-              />
-              <TableHead>Platform</TableHead>
-              <TableHead>Source</TableHead>
-              <SortableHead
-                label="Last seen"
-                field="last_seen_at"
-                currentField={query.sort_field}
-                sortOrder={query.sort_order}
-                onSort={toggleSort}
-              />
-              <SortableHead
-                label="First seen"
-                field="first_seen_at"
-                currentField={query.sort_field}
-                sortOrder={query.sort_order}
-                onSort={toggleSort}
-              />
-              <TableHead>Active for</TableHead>
-            </TableRow>
-          </TableHeader>
+        <>
+          {listingsPage && listingsPage.total_pages > 1 && (
+            <div className="flex items-center justify-between border-b p-3">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handlePageChange(query.page - 1)}
+                  disabled={query.page <= 1 || isLoading}
+                >
+                  <ChevronLeft className="size-4" /> Prev
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Page {query.page} of {listingsPage.total_pages}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handlePageChange(query.page + 1)}
+                  disabled={!has_next || isLoading}
+                >
+                  Next <ChevronRight className="size-4" />
+                </Button>
+              </div>
+              <Select value={query.page_size.toString()} onValueChange={handlePageSizeChange}>
+                <SelectTrigger className="w-[100px]">
+                  <SelectValue placeholder="Page Size" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAGE_SIZE_OPTIONS.map((size) => (
+                    <SelectItem key={size} value={size.toString()}>
+                      {size} per page
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <Table className="w-full">
+            <TableHeader>
+              <TableRow>
+                <SortableHead
+                  label="Title"
+                  field="title"
+                  currentField={query.sort_field}
+                  sortOrder={query.sort_order}
+                  onSort={toggleSort}
+                />
+                <SortableHead
+                  label="Price"
+                  field="price"
+                  currentField={query.sort_field}
+                  sortOrder={query.sort_order}
+                  onSort={toggleSort}
+                />
+                <SortableHead
+                  label="Change"
+                  field="price_change"
+                  currentField={query.sort_field}
+                  sortOrder={query.sort_order}
+                  onSort={toggleSort}
+                />
+                <SortableHead
+                  label="Condition"
+                  field="condition"
+                  currentField={query.sort_field}
+                  sortOrder={query.sort_order}
+                  onSort={toggleSort}
+                />
+                <TableHead>Category</TableHead>
+                <TableHead>Platform</TableHead>
+                <TableHead>Source</TableHead>
+                <SortableHead
+                  label="Last seen"
+                  field="last_seen_at"
+                  currentField={query.sort_field}
+                  sortOrder={query.sort_order}
+                  onSort={toggleSort}
+                />
+                <SortableHead
+                  label="First seen"
+                  field="first_seen_at"
+                  currentField={query.sort_field}
+                  sortOrder={query.sort_order}
+                  onSort={toggleSort}
+                />
+                <TableHead>Active for</TableHead>
+              </TableRow>
+            </TableHeader>
 
-          <TableBody>
-            {listingsPage.items.map((listing) => (
-              <ListingRow
-                key={listing.id}
-                listing={listing}
-                platformLookup={platformLookup}
-                getConditionBadgeVariant={getConditionBadgeVariant}
-                getPlatformBadgeVariant={getPlatformBadgeVariant}
-              />
-            ))}
-          </TableBody>
-        </Table>
+            <TableBody>
+              {listingsPage.items.map((listing) => (
+                <ListingRow
+                  key={listing.id}
+                  listing={listing}
+                  conditions={conditions}
+                  platforms={platforms}
+                  sources={sources}
+                  categories={categories}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </>
       )}
 
-      {listingsPage && listingsPage.total > 0 && (
+      {listingsPage && listingsPage.total_pages > 1 && (
         <div className="flex items-center justify-between border-t p-3">
           <div className="flex items-center gap-2">
             <Button
@@ -321,7 +368,7 @@ export function ListingsSection({
               <ChevronLeft className="size-4" /> Prev
             </Button>
             <span className="text-sm text-muted-foreground">
-              Page {query.page} of {Math.ceil(listingsPage.total / query.page_size)}
+              Page {query.page} of {listingsPage.total_pages}
             </span>
             <Button
               variant="ghost"

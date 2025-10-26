@@ -62,11 +62,12 @@ class ListingListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+    total_pages: int
     has_next: bool
     available_currencies: list[str] = Field(default_factory=list)
     available_conditions: list["ConditionResponse"] = Field(default_factory=list)
-    available_category_ids: list[int] = Field(default_factory=list)
-    available_platform_ids: list[int] = Field(default_factory=list)
+    available_categories: list["CategoryResponse"] = Field(default_factory=list)
+    available_platforms: list["PlatformResponse"] = Field(default_factory=list)
     available_sources: list["SourceResponse"] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
@@ -98,7 +99,7 @@ class ScrapeConfigCreate(BaseModel):
     )
     locales: Optional[list[str]] = Field(
         default=None,
-        description="Locales to scrape; maps to repeated --locale flags.",
+        description="Locales to scrape; mapped to repeated --locale flags.",
     )
     extra_args: Optional[list[str]] = Field(
         default=None,
@@ -191,18 +192,14 @@ class ScrapeConfigCreate(BaseModel):
         assert validated is not None
         return validated
 
+    model_config = ConfigDict(populate_by_name=True)
+
     @field_validator("healthcheck_ping_url")
     @classmethod
     def _validate_healthcheck(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return None
         return validate_base_url(value)
-
-    @model_validator(mode="after")
-    def _ensure_filters(self) -> "ScrapeConfigCreate":
-        if not self.search_text and not self.categories and not self.platform_ids:
-            raise ValueError("Provide at least one of search_text, categories, or platform_ids")
-        return self
 
 
 class ScrapeConfigUpdate(BaseModel):
@@ -345,18 +342,27 @@ class ScrapeConfigResponse(BaseModel):
 class CategoryResponse(BaseModel):
     id: int
     name: str
+    color: Optional[str] = None
+
+
+class PlatformResponse(BaseModel):
+    id: int
+    name: str
+    color: Optional[str] = None
 
 
 class ConditionResponse(BaseModel):
     id: int
     code: str
     label: str
+    color: Optional[str] = None
 
 
 class SourceResponse(BaseModel):
     id: int
     code: str
     label: str
+    color: Optional[str] = None
 
 
 # Stats schemas

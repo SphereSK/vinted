@@ -32,6 +32,10 @@ HEALTHCHECK_START_SUFFIX = os.getenv("SCRAPER_HEALTHCHECK_START_SUFFIX", "/start
 HEALTHCHECK_FAIL_SUFFIX = os.getenv("SCRAPER_HEALTHCHECK_FAIL_SUFFIX", "/fail")
 LOG_FILE = PROJECT_ROOT / "logs" / "cron.log"
 
+_fastapi_host = os.getenv("FASTAPI_HOST", "localhost")
+_fastapi_port = os.getenv("FASTAPI_PORT", "8000")
+FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", f"http://{_fastapi_host}:{_fastapi_port}")
+
 
 def _quote(value: object) -> str:
     return shlex.quote(str(value))
@@ -39,7 +43,7 @@ def _quote(value: object) -> str:
 
 def load_listings_to_cache():
     try:
-        requests.post("http://localhost:8000/api/listings/load")
+        requests.post(f"{FASTAPI_BASE_URL}/api/listings/load")
     except requests.exceptions.RequestException as e:
         print(f"Could not load listings to cache: {e}")
 
@@ -183,11 +187,92 @@ def build_scrape_command(
     Parameters mirror the ScrapeConfig attributes and allow optional overrides.
     """
 
-    load_listings_to_cache()
-
     tokens = shlex.split(SCRAPER_COMMAND)
     if not tokens:
         raise ValueError("SCRAPER_COMMAND must specify at least one token")
+
+    sanitized_order = validate_order(order)
+    sanitized_extras = sanitize_extra_arguments(extra_filters)
+    sanitized_locales = sanitize_locales(locales)
+    sanitized_error_wait = validate_positive_int(error_wait_minutes, "error_wait_minutes", minimum=0)
+    sanitized_max_retries = validate_positive_int(max_retries, "max_retries", minimum=0)
+    sanitized_base_url = validate_base_url(base_url)
+    sanitized_details_strategy = validate_details_strategy(details_strategy)
+    sanitized_details_concurrency = validate_positive_int(
+        details_concurrency, "details_concurrency", minimum=1
+    )
+
+    tokens.extend(["--search-text", search_text])
+    tokens.extend(["--max-pages", str(max_pages)])
+    tokens.extend(["--per-page", str(per_page)])
+    tokens.extend(["--delay", str(delay)])
+
+    for cat_id in categories or []:
+        tokens.extend(["-c", str(cat_id)])
+
+    for plat_id in platform_ids or []:
+        tokens.extend(["-p", str(plat_id)])
+
+    if fetch_details:
+        tokens.append("--fetch-details")
+
+    if details_for_new_only:
+        tokens.append("--details-for-new-only")
+
+    if sanitized_order:
+        tokens.extend(["--order", sanitized_order])
+
+    for extra_filter in sanitized_extras:
+        tokens.extend(["-e", extra_filter])
+
+    for locale in sanitized_locales:
+        tokens.extend(["--locale", locale])
+
+    resolved_use_proxy = DEFAULT_USE_PROXY if use_proxy is None else use_proxy
+    if not resolved_use_proxy:
+        tokens.append("--no-proxy")
+
+    if sanitized_error_wait is not None:
+        tokens.extend(["--error-wait", str(sanitized_error_wait)])
+
+    if sanitized_max_retries is not None:
+        tokens.extend(["--max-retries", str(sanitized_max_retries)])
+
+    if sanitized_base_url:
+        tokens.extend(["--base-url", sanitized_base_url])
+
+    if sanitized_details_strategy:
+        tokens.extend(["--details-strategy", sanitized_details_strategy])
+
+    if sanitized_details_concurrency is not None:
+        tokens.extend(["--details-concurrency", str(sanitized_details_concurrency)])
+
+    safe_extra_args = sanitize_extra_arguments(extra_args)
+    for arg in safe_extra_args:
+        tokens.extend(shlex.split(arg))
+
+    if config_id is not None:
+        tokens.extend(["--config-id", str(config_id)])
+
+    command = " ".join(_quote(token) for token in tokens)
+    cwd = Path(workdir) if workdir else PROJECT_ROOT
+    log_dir = PROJECT_ROOT / "logs"
+    log_dir.mkdir(exist_ok=True)
+    log_file = log_dir / "cron.log"
+
+    # Redirect output to log file
+    command_with_logging = f"{command} >> {log_file} 2>&1"
+
+    if healthcheck_ping_url:
+        sanitized_ping = validate_base_url(healthcheck_ping_url)
+        base_ping = sanitized_ping.rstrip("/")
+        success_url = base_ping
+        fail_url = f"{base_ping}{HEALTHCHECK_FAIL_SUFFIX}"
+        curl_cmd = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES}"
+        wrapped = f"({command_with_logging}; status=$?; if [ $status -eq 0 ]; then {curl_cmd} {_quote(success_url)} >/dev/null 2>&1; else {curl_cmd} {_quote(fail_url)} >/dev/null 2>&1; fi; exit $status)"
+        return f"cd {_quote(cwd)} && {wrapped}"
+
+    return f"cd {_quote(cwd)} && {command_with_logging}"
 
     sanitized_order = validate_order(order)
     sanitized_extras = sanitize_extra_arguments(extra_filters)
@@ -283,10 +368,10 @@ async def sync_crontab() -> None:
     This function should be called whenever configs are created/updated/deleted.
     """
     await init_db()
-    cron = get_user_crontab()
+    cron = await asyncio.to_thread(get_user_crontab)
 
     # Remove all existing vinted-scraper jobs
-    _purge_vinted_jobs(cron)
+    await asyncio.to_thread(_purge_vinted_jobs, cron)
 
     # Get all active configs with cron schedules
     async with Session() as session:
@@ -326,20 +411,17 @@ async def sync_crontab() -> None:
                 config_id=config.id,
             )
 
-            job = cron.new(
-                command=command,
-                comment=f"{CRON_COMMENT_PREFIX}:{config.id}",
-            )
-            job.setall(validate_cron_expression(config.cron_schedule))
+            job = await asyncio.to_thread(cron.new, command=command, comment=f"{CRON_COMMENT_PREFIX}:{config.id}")
+            await asyncio.to_thread(job.setall, validate_cron_expression(config.cron_schedule))
 
     # Write to system
-    cron.write()
-    load_listings_to_cache()
+    await asyncio.to_thread(cron.write)
+    await load_listings_to_cache_async() # Call the async version
 
 
 async def list_scheduled_jobs() -> list[dict[str, object]]:
     """List all scheduled vinted-scraper jobs."""
-    cron = get_user_crontab()
+    cron = await asyncio.to_thread(get_user_crontab)
     jobs: list[dict[str, object]] = []
 
     for job in cron:
@@ -368,9 +450,9 @@ async def list_scheduled_jobs() -> list[dict[str, object]]:
 
 async def remove_all_jobs() -> int:
     """Remove all vinted-scraper cron jobs."""
-    cron = get_user_crontab()
-    count = _purge_vinted_jobs(cron)
-    cron.write()
+    cron = await asyncio.to_thread(get_user_crontab)
+    count = await asyncio.to_thread(_purge_vinted_jobs, cron)
+    await asyncio.to_thread(cron.write)
     return count
 
 
