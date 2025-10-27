@@ -61,6 +61,7 @@ def build_catalog_url(base_url: str, search_text: str = None, category=None, pla
 from app.utils.language import detect_language_from_item
 from app.scraper.session_warmup import warmup_vinted_session
 from app.utils.retry import retry_with_backoff
+from app.utils.title_corrector import correct_title_with_llm
 
 
 # -----------------------------------------------------
@@ -165,6 +166,7 @@ async def upsert_listing(session, data: dict):
         index_elements=["url"],
         set_={
             "title": stmt.excluded.title,
+            "original_title": func.coalesce(Listing.original_title, stmt.excluded.title),
             "description": stmt.excluded.description,
             "language": stmt.excluded.language,
             "currency": stmt.excluded.currency,
@@ -182,13 +184,12 @@ async def upsert_listing(session, data: dict):
             "photos": stmt.excluded.photos,
             "category_id": stmt.excluded.category_id,
             "platform_ids": stmt.excluded.platform_ids,
+            "details_scraped": stmt.excluded.details_scraped,
             "last_seen_at": func.now(),
             "is_active": True,
             "vinted_id": stmt.excluded.vinted_id,
             "condition_option_id": stmt.excluded.condition_option_id,
-            "source_option_id": stmt.excluded.source_option_id,
-            "category_id": stmt.excluded.category_id,
-            "platform_ids": stmt.excluded.platform_ids,
+            "source_option_id": stmt.excluded.original_title,
         },
     ).returning(Listing)
     res = await session.execute(stmt)
@@ -331,6 +332,7 @@ async def scrape_and_store(
     base_url: str = None,
     details_strategy: str = "browser",
     details_concurrency: int = 2,
+    use_llm_for_title_correction: bool = False,
 ):
     """Fetch catalog items from Vinted, enrich with HTML details, and store in DB.
 
@@ -371,6 +373,7 @@ async def scrape_and_store(
             details_strategy=details_strategy,
             details_concurrency=details_concurrency,
             logger=logger,
+            use_llm_for_title_correction=use_llm_for_title_correction,
         )
 
 async def _scrape_and_store_locale(
@@ -389,6 +392,7 @@ async def _scrape_and_store_locale(
     details_strategy: str,
     details_concurrency: int,
     logger,
+    use_llm_for_title_correction: bool = False,
 ):
     await init_db()
 
@@ -435,6 +439,7 @@ async def _scrape_and_store_locale(
         start_time = time.time()
         page_times = []
         detail_metrics = {'success': 0, 'failed': 0, 'total_time': 0}
+        scraped_successfully = False # Flag to track if any items were scraped successfully
 
         semaphore = asyncio.Semaphore(details_concurrency)
 
@@ -470,6 +475,8 @@ async def _scrape_and_store_locale(
             if not items:
                 logger.warning("No items found on page, stopping.")
                 break
+            else:
+                scraped_successfully = True # Mark as successful if at least one page returns items
 
             page_item_count = 0
             page_new_count = 0
@@ -500,13 +507,9 @@ async def _scrape_and_store_locale(
                         except Exception as e:
                             logger.error(f"Error fetching details for {item['url']}: {e}")
 
-                    # Detect language from title and description
-                    detected_lang = detect_language_from_item(
-                        title=item.get("title", ""),
-                        description=details.get("description") or item.get("description", "")
-                    )
-
-# ... (rest of the file)
+                    # Capture original title
+                    original_title = item.get("title", "")
+                    item["title"] = original_title # Ensure the item's title remains original for now
 
                     condition_option_id = await get_or_create_condition_option(
                         session, item.get("condition")
@@ -533,14 +536,14 @@ async def _scrape_and_store_locale(
                     merged = {
                         **item,
                         **details,
+                        "original_title": original_title, # Store original title
                         "price_cents": int(float(item["price"]) * 100)
                         if item.get("price")
                         else None,
                         "total_cents": int(float(item["price"]) * 100)
                         if item.get("price")
                         else None,
-                        "language": detected_lang,
-                        # "source": item.get("source"), # Removed as source_option_id is used
+                        # "language": detected_lang, # Language detection moved to post-processing
                         "category_id": final_category_id,
                         "platform_ids": final_platform_ids,
                         "brand": standardize_brand(item.get("brand")),
@@ -567,7 +570,6 @@ async def _scrape_and_store_locale(
 
                     total += 1
                     page_item_count += 1
-
                 except Exception as e:
                     logger.error(f"DB error for {item.get('url')}: {e}")
                     await session.rollback()  # Reset transaction state to continue processing other items
@@ -584,14 +586,15 @@ async def _scrape_and_store_locale(
     if driver:
         driver.quit()
 
-    # Mark old listings as inactive (not seen in last 48 hours)
-    logger.info("Marking old listings as inactive...")
-    async with Session() as session:
-        inactive_count = await mark_old_listings_inactive(session, logger, hours_threshold=48)
-        if inactive_count > 0:
-            logger.info(f"Marked {inactive_count} listing(s) as inactive (not seen in 48+ hours)")
-        else:
-            logger.info("All listings are up to date")
+    if scraped_successfully: # Only mark inactive if some items were scraped
+        # Mark old listings as inactive (not seen in last 48 hours)
+        logger.info("Marking old listings as inactive...")
+        async with Session() as session:
+            inactive_count = await mark_old_listings_inactive(session, logger, hours_threshold=48)
+            if inactive_count > 0:
+                logger.info(f"Marked {inactive_count} listing(s) as inactive (not seen in 48+ hours)")
+            else:
+                logger.info("All listings are up to date")
 
     # Get final database stats
     async with Session() as session:

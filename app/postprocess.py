@@ -130,8 +130,8 @@ async def process_title_correction(
         # Find listings where title is the same as original_title (meaning it hasn't been corrected yet)
         # and is_active is True
         query = select(Listing).where(
-            Listing.title == Listing.original_title,
-            Listing.is_active == True
+            Listing.is_active == True,
+            (Listing.original_title.is_(None)) | (Listing.title != Listing.original_title)
         )
 
         if source:
@@ -169,21 +169,36 @@ async def process_title_correction(
 
                 logger.info(f"Correcting title for: {listing.original_title}")
 
-                corrected_title = await correct_title_with_llm(listing.original_title)
+                corrected_title = await correct_title_with_llm(listing.title) # LLM works on current title
 
-                if corrected_title and corrected_title != listing.original_title:
-                    stmt = (
-                        update(Listing)
-                        .where(Listing.id == listing.id)
-                        .values(title=corrected_title)
-                    )
-                    await session.execute(stmt)
-                    await session.commit()
-
-                    logger.info(f"Corrected title to: {corrected_title}")
-                    processed += 1
+                if corrected_title: # LLM call was successful and returned a non-empty string
+                    if corrected_title != listing.title: # LLM made a change compared to the current title
+                        stmt = (
+                            update(Listing)
+                            .where(Listing.id == listing.id)
+                            .values(
+                                title=corrected_title,
+                                original_title=listing.title # Store the title *before* this correction as the new original
+                            )
+                        )
+                        await session.execute(stmt)
+                        await session.commit()
+                        logger.info(f"Corrected title from '{listing.title}' to: {corrected_title}")
+                        processed += 1
+                    else: # LLM returned the same title as the current title
+                        # Mark as reviewed by updating original_title to current title
+                        stmt = (
+                            update(Listing)
+                            .where(Listing.id == listing.id)
+                            .values(original_title=listing.title) # Mark as reviewed
+                        )
+                        await session.execute(stmt)
+                        await session.commit()
+                        logger.info(f"Title '{listing.title}' reviewed by LLM, no correction needed. Marked as reviewed.")
+                        processed += 1 # Count as processed, as it was reviewed
                 else:
-                    logger.info("Title did not need correction or correction failed.")
+                    logger.warning(f"LLM correction failed or returned empty title for '{listing.title}'.")
+                    errors += 1
 
                 # Delay between requests
                 await asyncio.sleep(delay + random.uniform(0, 0.5))
