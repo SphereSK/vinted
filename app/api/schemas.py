@@ -388,3 +388,11 @@ class StatsResponse(BaseModel):
     total_listings_previous_7_days: int
     total_listings_previous_30_days: int
     source_stats: dict[str, dict[str, int]] = Field(default_factory=dict)
+
+class ListingsByPeriod(BaseModel):
+    period: str
+    new_listings: int
+    total_listings: int
+
+class ListingsByPeriodResponse(BaseModel):
+    items: list[ListingsByPeriod]
