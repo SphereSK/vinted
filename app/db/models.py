@@ -3,7 +3,7 @@ import datetime as dt
 from typing import Optional, List
 from sqlalchemy import (
     String, Integer, BigInteger, DateTime, Boolean, JSON, Numeric, Index,
-    ForeignKey, UniqueConstraint, func
+    ForeignKey, UniqueConstraint, func, false
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from ..config import settings
@@ -73,6 +73,7 @@ class Listing(Base):
 
     # Basic info
     title: Mapped[Optional[str]] = mapped_column(String(512))
+    original_title: Mapped[Optional[str]] = mapped_column(String(512))
     description: Mapped[Optional[str]] = mapped_column(String(4096))
     language: Mapped[Optional[str]] = mapped_column(String(12))
     currency: Mapped[Optional[str]] = mapped_column(String(12))
@@ -107,6 +108,12 @@ class Listing(Base):
     first_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=func.now())
     last_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    details_scraped: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default=false(),
+        nullable=False,
+    )
 
     # Relationships
     prices: Mapped[List["PriceHistory"]] = relationship(
@@ -139,6 +146,7 @@ class Listing(Base):
         UniqueConstraint("url", name="uq_listings_url"),
         Index("ix_listings_vinted_id", "vinted_id"),
         Index("ix_listings_category_id", "category_id"),
+        Index("ix_listings_details_scraped", "details_scraped"),
         {"schema": settings.schema} if settings.database_url.startswith("postgresql") else {}
     )
 

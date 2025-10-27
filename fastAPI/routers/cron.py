@@ -1,4 +1,3 @@
-"""Cron scheduling endpoints."""
 import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,15 +13,17 @@ from fastAPI.schemas import (
     CronHealthStatus,
     CronHealthUpdateRequest,
 )
+from app.utils.logging import get_logger
 
 router = APIRouter(
     prefix="/api/cron",
     tags=["cron"],
-    dependencies=[Depends(require_api_key)],
 )
 
+logger = get_logger(__name__)
 
-@router.get("/jobs")
+
+@router.get("/jobs", dependencies=[Depends(require_api_key)])
 async def list_jobs() -> dict:
     """Return configured cron jobs."""
     try:
@@ -32,7 +33,7 @@ async def list_jobs() -> dict:
     return {"jobs": jobs}
 
 
-@router.post("/sync")
+@router.post("/sync", dependencies=[Depends(require_api_key)])
 async def sync_jobs() -> dict:
     """Trigger cron synchronization."""
     try:
@@ -42,7 +43,7 @@ async def sync_jobs() -> dict:
     return {"message": "Crontab synced successfully"}
 
 
-@router.post("/build", response_model=CronCommandResponse)
+@router.post("/build", response_model=CronCommandResponse, dependencies=[Depends(require_api_key)])
 async def build_job_command(payload: CronCommandRequest) -> CronCommandResponse:
     """Return the CLI command a cron job would execute for the supplied payload."""
     try:
@@ -74,7 +75,7 @@ async def build_job_command(payload: CronCommandRequest) -> CronCommandResponse:
     return CronCommandResponse(command=command, schedule=payload.schedule)
 
 
-@router.post("/health/{config_id}")
+@router.post("/health/{config_id}", dependencies=[Depends(require_api_key)])
 async def update_health_status(
     config_id: int, payload: CronHealthUpdateRequest
 ) -> dict:
@@ -94,7 +95,7 @@ async def update_health_status(
     return {"message": "Health status updated"}
 
 
-@router.get("/health/{config_id}", response_model=CronHealthStatus)
+@router.get("/health/{config_id}", response_model=CronHealthStatus, dependencies=[])
 async def get_health_status(config_id: int) -> CronHealthStatus:
     """Get the health status of a cron job."""
     async with Session() as session:
@@ -105,6 +106,7 @@ async def get_health_status(config_id: int) -> CronHealthStatus:
         if not config:
             raise HTTPException(status_code=404, detail="Config not found")
 
+    logger.info(f"Health status for config {config_id}: status={config.last_health_status}, checked_at={config.last_health_check_at}")
     return CronHealthStatus(
         config_id=config.id,
         status=config.last_health_status,

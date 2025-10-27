@@ -187,3 +187,29 @@ class CronCommandResponse(BaseModel):
 
     command: str
     schedule: Optional[str] = None
+
+
+class DetailRunRequest(BaseModel):
+    """Payload describing an ad-hoc detail scraping job."""
+
+    batch_size: int = Field(default=100, ge=1, le=1000)
+    source: Optional[str] = Field(default=None, max_length=64)
+    limit: Optional[int] = Field(default=None, ge=1, le=5000)
+    locale: str = Field(default="sk", min_length=2, max_length=10)
+    warmup: bool = True
+    download_delay: Optional[float] = Field(default=None, ge=0.0, le=30.0)
+    concurrent_requests: Optional[int] = Field(default=None, ge=1, le=32)
+    log_level: Optional[str] = Field(default=None, max_length=16)
+
+
+class DetailStatusResponse(BaseModel):
+    """Runtime status payload for the detail scraper."""
+
+    status: str
+    message: Optional[str] = None
+    updated_at: datetime
+    processed: Optional[int] = None
+    remaining_after: Optional[int] = None
+    remaining_before: Optional[int] = None
+    batch_size: Optional[int] = None
+    source: Optional[str] = None

@@ -1,11 +1,12 @@
 """API router modules for the FastAPI service."""
 
-from . import cron, listings, stats, configs, taxonomy  # noqa: F401
+from . import configs, cron, details, listings, stats, taxonomy  # noqa: F401
 
 __all__ = [
+    "configs",
     "cron",
+    "details",
     "listings",
     "stats",
-    "configs",
     "taxonomy",
 ]

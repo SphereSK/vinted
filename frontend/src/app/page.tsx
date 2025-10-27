@@ -29,6 +29,7 @@ import type {
   ConditionResponse,
   SourceResponse,
   ListingsQuery,
+  ListingsByPeriodResponse,
 } from "@/lib/types";
 import {
   loadListingsToCache,
@@ -42,10 +43,12 @@ import {
   runScrapeConfig,
   listConditions,
   listSources,
+  fetchListingsByPeriod,
 } from "@/lib/endpoints";
 
 export default function VintedControlCenter() {
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [selectedPeriod, setSelectedPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
 
   const queryClient = useQueryClient();
 
@@ -85,6 +88,11 @@ export default function VintedControlCenter() {
   const { data: sources = [] } = useQuery<SourceResponse[]>({
     queryKey: ["sources"],
     queryFn: listSources,
+  });
+
+  const { data: listingsByPeriod, isLoading: listingsByPeriodLoading } = useQuery<ListingsByPeriodResponse>({
+    queryKey: ["listingsByPeriod", selectedPeriod],
+    queryFn: () => fetchListingsByPeriod(selectedPeriod),
   });
 
   const { mutate: runConfig } = useMutation({
@@ -127,8 +135,6 @@ export default function VintedControlCenter() {
     queryClient.invalidateQueries();
   };
 
-
-
   const [listingsQuery, setListingsQuery] = useState<ListingsQuery>({
     page: 1,
     page_size: 15,
@@ -142,21 +148,14 @@ export default function VintedControlCenter() {
     keepPreviousData: true,
   });
 
-  useEffect(() => {
-    if (listingsPage?.has_next) {
-      const nextQuery = { ...listingsQuery, page: listingsQuery.page + 1 };
-      queryClient.prefetchQuery({
-        queryKey: ["listings", nextQuery],
-        queryFn: () => fetchListings(nextQuery),
-      });
-    }
-  }, [listingsPage, listingsQuery, queryClient]);
-
   const handleListingsQueryChange = (query: Partial<ListingsQuery>) => {
     setListingsQuery((prev) => ({ ...prev, ...query }));
   };
 
-
+  const handleEditConfig = (config: ScrapeConfigResponse) => {
+    setSelectedConfig(config);
+    setConfigDialogOpen(true);
+  };
 
   return (
     <main className="mx-auto flex w-full flex-col gap-6 p-6">
@@ -201,6 +200,10 @@ export default function VintedControlCenter() {
             cronJobs={cronJobs}
             cronError={cronError as Error | null}
             cronLoading={cronLoading}
+            listingsByPeriod={listingsByPeriod?.items ?? []}
+            listingsByPeriodLoading={listingsByPeriodLoading}
+            selectedPeriod={selectedPeriod}
+            setSelectedPeriod={setSelectedPeriod}
           />
         </TabsContent>
 
@@ -222,7 +225,7 @@ export default function VintedControlCenter() {
           <ConfigsSection
             configs={configs}
             statuses={{}}
-            onEdit={setSelectedConfig}
+            onEdit={handleEditConfig}
             onRun={(config) => runConfig(config.id)}
           />
         </TabsContent>

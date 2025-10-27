@@ -4,14 +4,26 @@ from __future__ import annotations
 import os
 from typing import Any, Callable
 
+import sentry_sdk
 from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 
-from fastAPI.routers import configs, cron, listings, stats, taxonomy
+from fastAPI.routers import configs, cron, details, listings, stats, taxonomy
 
 # Ensure environment variables from the project-level .env are available.
 load_dotenv(find_dotenv())
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    integrations=[
+        FastApiIntegration(),
+    ],
+    # Set traces_sample_rate to 1.0 to capture 100% of transactions for performance monitoring.
+    # We recommend adjusting this value in production.
+    traces_sample_rate=1.0,
+)
 
 # Optional hooks for deploying a custom OpenAPI/Docs configuration.
 _host = os.getenv("FASTAPI_HOST", "0.0.0.0")
@@ -43,8 +55,8 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"] if allow_all_origins else origins,
-        allow_credentials=not allow_all_origins,
+        allow_origins=["*"] , # Allow all origins for development
+        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -63,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(configs.router)
     app.include_router(taxonomy.router)
     app.include_router(cron.router)
+    app.include_router(details.router)
 
     @app.get("/")
     async def root() -> dict[str, str]:  # pragma: no cover - simple health endpoint

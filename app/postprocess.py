@@ -172,7 +172,7 @@ async def process_title_correction(
                     errors += 1
                     continue
 
-                logger.info(f"Correcting title for: {listing.title}")
+                logger.info(f"Correcting title for (Vinted ID: {listing.vinted_id}): {listing.title}")
 
                 corrected_title = await correct_title_with_llm(listing.title) # LLM works on current title
 
@@ -188,7 +188,7 @@ async def process_title_correction(
                         )
                         await session.execute(stmt)
                         await session.commit()
-                        logger.info(f"Corrected title from '{listing.title}' to: {corrected_title}")
+                        logger.info(f"LLM input (Vinted ID: {listing.vinted_id}): '{listing.title}' -> LLM output: '{corrected_title}'")
                         processed += 1
                     else: # LLM returned the same title as the current title
                         # Mark as reviewed by updating original_title to current title
@@ -199,17 +199,17 @@ async def process_title_correction(
                         )
                         await session.execute(stmt)
                         await session.commit()
-                        logger.info(f"Title '{listing.title}' reviewed by LLM, no correction needed. Marked as reviewed.")
+                        logger.info(f"Title '{listing.title}' (Vinted ID: {listing.vinted_id}) reviewed by LLM, no correction needed. Marked as reviewed.")
                         processed += 1 # Count as processed, as it was reviewed
                 else:
-                    logger.warning(f"LLM correction failed or returned empty title for '{listing.title}'.")
+                    logger.warning(f"LLM correction failed or returned empty title for '{listing.title}' (Vinted ID: {listing.vinted_id}).")
                     errors += 1
 
                 # Delay between requests
                 await asyncio.sleep(delay + random.uniform(0, 0.5))
 
             except Exception as e:
-                logger.error(f"Error correcting title for {listing.title}: {e}")
+                logger.error(f"Error correcting title for '{listing.title}' (Vinted ID: {listing.vinted_id}): {e}")
                 errors += 1
                 await session.rollback()
                 continue

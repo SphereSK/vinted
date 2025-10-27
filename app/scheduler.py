@@ -35,6 +35,8 @@ LOG_FILE = PROJECT_ROOT / "logs" / "cron.log"
 _fastapi_host = os.getenv("FASTAPI_HOST", "localhost")
 _fastapi_port = os.getenv("FASTAPI_PORT", "8000")
 FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", f"http://{_fastapi_host}:{_fastapi_port}")
+FASTAPI_API_KEY = os.getenv("FASTAPI_API_KEY")
+FASTAPI_API_KEY_HEADER = os.getenv("FASTAPI_API_KEY_HEADER", "X-API-Key")
 
 
 def _quote(value: object) -> str:
@@ -266,8 +268,8 @@ def build_scrape_command(
     if config_id:
         # Always ping internal health check endpoint
         internal_health_url = f"{FASTAPI_BASE_URL}/api/cron/health/{config_id}"
-        curl_cmd_success_internal = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES} -X POST -H 'Content-Type: application/json' -d '{{\"status\":\"ok\"}}' {_quote(internal_health_url)}"
-        curl_cmd_fail_internal = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES} -X POST -H 'Content-Type: application/json' -d '{{\"status\":\"fail\"}}' {_quote(internal_health_url)}"
+        curl_cmd_success_internal = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES} -X POST -H 'Content-Type: application/json' -H '{FASTAPI_API_KEY_HEADER}: {FASTAPI_API_KEY}' -d '{{\"status\":\"ok\"}}' {_quote(internal_health_url)}"
+        curl_cmd_fail_internal = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES} -X POST -H 'Content-Type: application/json' -H '{FASTAPI_API_KEY_HEADER}: {FASTAPI_API_KEY}' -d '{{\"status\":\"fail\"}}' {_quote(internal_health_url)}"
 
         success_commands = [curl_cmd_success_internal]
         fail_commands = [curl_cmd_fail_internal]

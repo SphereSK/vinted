@@ -100,6 +100,7 @@ async def load_listings_to_cache(db: AsyncSession, redis):
             "first_seen_at": listing.first_seen_at,
             "last_seen_at": listing.last_seen_at,
             "is_active": listing.is_active,
+            "details_scraped": listing.details_scraped,
             "title": listing.title,
             "price_cents": listing.price_cents,
             "currency": listing.currency,

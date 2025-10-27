@@ -14,7 +14,16 @@ export function HealthStatusBadge({ configId }: HealthStatusBadgeProps) {
   useEffect(() => {
     async function fetchHealth() {
       try {
-        const response = await fetch(`/api/cron/health/${configId}`);
+        const apiKey = process.env.NEXT_PUBLIC_API_KEY;
+        if (!apiKey) {
+          throw new Error("API Key not configured for frontend.");
+        }
+
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/api/cron/health/${configId}`, {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`
+          }
+        });
         if (!response.ok) {
           throw new Error("Failed to fetch health status");
         }

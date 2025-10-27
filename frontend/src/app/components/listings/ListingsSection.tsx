@@ -299,6 +299,13 @@ export function ListingsSection({
                   onSort={toggleSort}
                 />
                 <SortableHead
+                  label="Seller"
+                  field="seller_name"
+                  currentField={query.sort_field}
+                  sortOrder={query.sort_order}
+                  onSort={toggleSort}
+                />
+                <SortableHead
                   label="Price"
                   field="price"
                   currentField={query.sort_field}

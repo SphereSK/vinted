@@ -1,10 +1,12 @@
 "use client";
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Loader2, ArrowUpRight, ArrowDownRight } from "lucide-react";
-import type { StatsResponse, ScrapeConfigResponse, CronJobEntry } from "@/lib/types";
+import type { StatsResponse, ScrapeConfigResponse, CronJobEntry, ListingsByPeriod } from "@/lib/types";
 import { formatCurrency } from "@/lib/format";
 import { StatCard, TrendPill } from "../common/StatCard";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const calculateTrend = (current: number, previous: number) => {
   if (previous === 0) return 0; // Avoid division by zero
@@ -30,6 +32,10 @@ interface DashboardSectionProps {
   cronJobs: CronJobEntry[];
   cronError: Error | null;
   cronLoading: boolean;
+  listingsByPeriod: ListingsByPeriod[];
+  listingsByPeriodLoading: boolean;
+  selectedPeriod: "daily" | "weekly" | "monthly";
+  setSelectedPeriod: (period: "daily" | "weekly" | "monthly") => void;
 }
 
 export function DashboardSection({
@@ -39,6 +45,10 @@ export function DashboardSection({
   cronJobs,
   cronError,
   cronLoading,
+  listingsByPeriod,
+  listingsByPeriodLoading,
+  selectedPeriod,
+  setSelectedPeriod,
 }: DashboardSectionProps) {
   const totalConfigs = configs.length;
   const totalCrons = cronJobs.length;
@@ -48,6 +58,8 @@ export function DashboardSection({
       ? `${totalCrons} cron job${totalCrons === 1 ? "" : "s"}`
       : undefined;
 
+  const inactiveListings = (stats?.total_listings ?? 0) - (stats?.active_listings ?? 0);
+
   const priceChangeSummary = {
     up: stats?.price_increase_count ?? 0,
     down: stats?.price_decrease_count ?? 0,
@@ -55,39 +67,66 @@ export function DashboardSection({
   };
 
   const totalListingsTrendToday = calculateTrend(
-    stats?.total_listings ?? 0,
-    stats?.total_listings_previous_day ?? 0
+    stats?.total_scraped_today ?? 0,
+    stats?.total_scraped_previous_day ?? 0
+  );
+  const totalListingsTrendYesterday = calculateTrend(
+    stats?.total_scraped_previous_day ?? 0,
+    stats?.total_scraped_day_before_previous ?? 0
   );
   const totalListingsTrend7Days = calculateTrend(
-    stats?.total_listings ?? 0,
-    stats?.total_listings_previous_7_days ?? 0
+    stats?.total_scraped_last_7_days ?? 0,
+    stats?.total_scraped_previous_7_days ?? 0
   );
   const totalListingsTrend30Days = calculateTrend(
-    stats?.total_listings ?? 0,
-    stats?.total_listings_previous_30_days ?? 0
+    stats?.total_scraped_last_30_days ?? 0,
+    stats?.total_scraped_previous_30_days ?? 0
   );
 
   return (
     <div className="flex flex-col gap-6 pt-4">
       {/* Stats overview cards */}
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Active listings" value={stats?.active_listings} loading={statsLoading} />
-        <StatCard title="Total listings" value={stats?.total_listings} loading={statsLoading} />
-        <StatCard
-          title="Average price"
-          value={stats?.avg_price_cents ? formatCurrency(stats.avg_price_cents) : null}
-          loading={statsLoading}
-        />
-        <StatCard
-          title="Min price"
-          value={stats?.min_price_cents ? formatCurrency(stats.min_price_cents) : null}
-          loading={statsLoading}
-        />
-        <StatCard
-          title="Max price"
-          value={stats?.max_price_cents ? formatCurrency(stats.max_price_cents) : null}
-          loading={statsLoading}
-        />
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <Card>
+          <CardHeader>
+            <CardTitle>Listings Overview</CardTitle>
+            <CardDescription>Current and total listings</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            <div className="flex items-center justify-between">
+              <span>Active Listings:</span>
+              <span>{stats?.active_listings ?? 0}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Inactive Listings:</span>
+              <span>{inactiveListings}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Total Listings:</span>
+              <span>{stats?.total_listings ?? 0}</span>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Price Overview</CardTitle>
+            <CardDescription>Min, max, and average prices</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            <div className="flex items-center justify-between">
+              <span>Min Price:</span>
+              <span>{stats?.min_price_cents ? formatCurrency(stats.min_price_cents) : "N/A"}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Max Price:</span>
+              <span>{stats?.max_price_cents ? formatCurrency(stats.max_price_cents) : "N/A"}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span>Average Price:</span>
+              <span>{stats?.avg_price_cents ? formatCurrency(stats.avg_price_cents) : "N/A"}</span>
+            </div>
+          </CardContent>
+        </Card>
         <StatCard title="Configs" value={totalConfigs} loading={statsLoading} caption={configsCaption} />
       </section>
 
@@ -106,6 +145,17 @@ export function DashboardSection({
                 {getTrendIcon(totalListingsTrendToday)}
                 <span className={getTrendColor(totalListingsTrendToday)}>
                   {totalListingsTrendToday.toFixed(2)}%
+                </span>
+              </span>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <span>Yesterday:</span>
+              <span className="flex items-center gap-1">
+                {stats?.total_scraped_previous_day ?? 0}
+                {getTrendIcon(totalListingsTrendYesterday)}
+                <span className={getTrendColor(totalListingsTrendYesterday)}>
+                  {totalListingsTrendYesterday.toFixed(2)}%
                 </span>
               </span>
             </div>
@@ -132,32 +182,6 @@ export function DashboardSection({
           </CardContent>
         </Card>
 
-        {/* Active/Inactive Listings */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Active/Inactive Listings</CardTitle>
-            <CardDescription>Current status of listings</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-2">
-            <div className="flex items-center justify-between">
-              <span>Active (Last 7 Days):</span>
-              <span>{stats?.active_listings_last_7_days ?? 0}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Inactive (Today):</span>
-              <span>{stats?.inactive_listings_today ?? 0}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Inactive (Last 7 Days):</span>
-              <span>{stats?.inactive_listings_last_7_days ?? 0}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Inactive (Last 30 Days):</span>
-              <span>{stats?.inactive_listings_last_30_days ?? 0}</span>
-            </div>
-          </CardContent>
-        </Card>
-
         {/* Recent price movement and configs overview */}
         <Card>
           <CardHeader>
@@ -170,6 +194,57 @@ export function DashboardSection({
               <TrendPill label="Price decrease" value={priceChangeSummary.down} tone="down" />
               <TrendPill label="Unchanged" value={priceChangeSummary.same} tone="neutral" />
             </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Listings by Period Chart */}
+      <section className="grid gap-4 md:grid-cols-1 lg:grid-cols-1">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle>Listings by Period</CardTitle>
+            <div className="flex space-x-2">
+              <Button
+                variant={selectedPeriod === "daily" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedPeriod("daily")}
+              >
+                Daily
+              </Button>
+              <Button
+                variant={selectedPeriod === "weekly" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedPeriod("weekly")}
+              >
+                Weekly
+              </Button>
+              <Button
+                variant={selectedPeriod === "monthly" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedPeriod("monthly")}
+              >
+                Monthly
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent style={{ height: '300px' }}>
+            {listingsByPeriodLoading ? (
+              <div className="flex h-full items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin" />
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={listingsByPeriod ?? []}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="period" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="new_listings" stackId="a" fill="#8884d8" name="New Listings" />
+                  <Bar dataKey="total_listings" stackId="a" fill="#82ca9d" name="Total Listings" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </CardContent>
         </Card>
       </section>

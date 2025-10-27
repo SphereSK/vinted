@@ -189,7 +189,7 @@ async def upsert_listing(session, data: dict):
             "is_active": True,
             "vinted_id": stmt.excluded.vinted_id,
             "condition_option_id": stmt.excluded.condition_option_id,
-            "source_option_id": stmt.excluded.original_title,
+            "source_option_id": stmt.excluded.source_option_id,
         },
     ).returning(Listing)
     res = await session.execute(stmt)

@@ -26,7 +26,7 @@ import type {
   CronCommandResponse,
 } from "@/lib/types";
 import { buildCronCommand } from "@/lib/endpoints";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { NumberField } from "../common/NumberField";
 import { SwitchField } from "../common/SwitchField";
 import { HelperList } from "../common/HelperList";
@@ -97,6 +97,37 @@ export function ConfigDialog({
           healthcheck_ping_url: "",
         },
   );
+
+  useEffect(() => {
+    if (config) {
+      setForm({ ...config });
+    } else {
+      setForm({
+        name: "",
+        search_text: "",
+        categories: "",
+        platform_ids: "",
+        order: "",
+        extra_filters: "",
+        locales: "",
+        extra_args: "",
+        max_pages: 5,
+        per_page: 24,
+        delay: 1,
+        fetch_details: false,
+        details_for_new_only: false,
+        use_proxy: true,
+        error_wait_minutes: 30,
+        max_retries: 3,
+        base_url: "",
+        details_strategy: "browser" as const,
+        details_concurrency: 2,
+        cron_schedule: "",
+        is_active: true,
+        healthcheck_ping_url: "",
+      });
+    }
+  }, [config]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [preview, setPreview] = useState<CronCommandResponse | null>(null);
@@ -241,6 +272,34 @@ export function ConfigDialog({
               description="Disable to connect directly (recommended in most cases)."
               checked={form.use_proxy}
               onCheckedChange={(v) => setForm({ ...form, use_proxy: v })}
+            />
+          </div>
+
+          {/* ── Detail Fetching Options ───────────────────── */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="details_strategy">Details Strategy</Label>
+              <Select
+                value={form.details_strategy}
+                onValueChange={(v) => setForm({ ...form, details_strategy: v as "browser" | "http" })}
+              >
+                <SelectTrigger id="details_strategy">
+                  <SelectValue placeholder="Select strategy" />
+                </SelectTrigger>
+                <SelectContent>
+                  {DETAIL_STRATEGY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <NumberField
+              label="Details Concurrency"
+              value={form.details_concurrency}
+              onChange={(v) => setForm({ ...form, details_concurrency: v })}
+              description="Number of concurrent detail fetches."
             />
           </div>
 

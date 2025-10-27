@@ -33,6 +33,10 @@ export function ListingRow({ listing, conditions, platforms, sources, categories
       </TableCell>
 
       <TableCell className="text-sm">
+        {listing.seller_name || "—"}
+      </TableCell>
+
+      <TableCell className="text-sm">
         {listing.price_cents
           ? formatCurrency(listing.price_cents, listing.currency)
           : "—"}

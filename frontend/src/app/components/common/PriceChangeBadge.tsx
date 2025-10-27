@@ -24,9 +24,9 @@ export function PriceChangeBadge({
 
   const toneClasses =
     change === "up"
-      ? "bg-emerald-500/10 text-emerald-500"
-      : change === "down"
       ? "bg-red-500/10 text-red-500"
+      : change === "down"
+      ? "bg-emerald-500/10 text-emerald-500"
       : "bg-muted text-muted-foreground";
 
   const Icon =

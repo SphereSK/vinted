@@ -2,13 +2,14 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
+import sentry_sdk
 import typer
 from sqlalchemy import func, select
 
 from app.db.models import Listing, ScrapeConfig
 from app.db.session import Session, init_db
 from app.ingest import scrape_and_store
-from app.postprocess import process_language_detection
+from app.postprocess import process_language_detection, process_title_correction
 from app.utils.url import build_catalog_url
 from app.utils.categories import (
     list_common_categories,
@@ -18,6 +19,15 @@ from app.utils.categories import (
 )
 from app.utils.logging import get_logger
 from fastAPI.redis import set_config_status
+from app.scrapy_worker.runner import run_detail_spider
+import os
+
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    # Set traces_sample_rate to 1.0 to capture 100% of transactions for performance monitoring.
+    # We recommend adjusting this value in production.
+    traces_sample_rate=1.0,
+)
 
 
 async def run_scrape_job(
@@ -555,17 +565,12 @@ def platforms(
 
 
 @app.command()
-def detect_language(
+def detect_language_postprocess(
     limit: int = typer.Option(
         None,
         "--limit",
         "-l",
         help="Maximum number of listings to process (default: all)"
-    ),
-    delay: float = typer.Option(
-        1.5,
-        "--delay",
-        help="Delay between requests in seconds [default: 1.5]"
     ),
     source: str = typer.Option(
         None,
@@ -611,10 +616,111 @@ def detect_language(
     asyncio.run(
         process_language_detection(
             limit=limit,
+            source=source,
+            logger=logger,
+        )
+    )
+
+
+@app.command()
+def correct_titles_postprocess(
+    limit: int = typer.Option(
+        None,
+        "--limit",
+        "-l",
+        help="Maximum number of listings to process (default: all)"
+    ),
+    delay: float = typer.Option(
+        1.5,
+        "--delay",
+        help="Delay between requests in seconds [default: 1.5]"
+    ),
+    source: str = typer.Option(
+        None,
+        "--source",
+        "-s",
+        help="Filter by source (e.g., 'vinted', 'bazos')"
+    ),
+):
+    """
+    📝 Post-process listings to correct and standardize titles using LLM.
+
+    This command applies LLM-based title correction to listings that
+    have not yet been corrected. It's separate from the main scraping
+    flow for better performance and control.
+
+    ═══════════════════════════════════════════════════════════════
+    💡 WHEN TO USE:
+    ═══════════════════════════════════════════════════════════════
+
+    1. After scraping to standardize titles (e.g., translate to English).
+    2. To correct typos and inconsistencies in titles.
+    3. To avoid slowing down the main scraping flow.
+
+    ═══════════════════════════════════════════════════════════════
+    📊 EXAMPLES:
+    ═══════════════════════════════════════════════════════════════
+
+    # Process all listings needing title correction
+    vinted-scraper correct-titles-postprocess
+
+    # Process only 10 listings (for testing)
+    vinted-scraper correct-titles-postprocess --limit 10
+
+    # Process only Vinted listings
+    vinted-scraper correct-titles-postprocess --source vinted
+
+    # Slower processing to avoid rate limits on LLM API
+    vinted-scraper correct-titles-postprocess --delay 2.0
+
+    ═══════════════════════════════════════════════════════════════
+    """
+    logger = get_logger(__name__)
+    asyncio.run(
+        process_title_correction(
+            limit=limit,
             delay=delay,
             source=source,
             logger=logger,
         )
+    )
+
+
+@app.command("scrape-details")
+def scrape_details(
+    batch_size: int = typer.Option(100, help="Number of listings to process."),
+    source: Optional[str] = typer.Option(None, help="Filter listings by source code."),
+    limit: Optional[int] = typer.Option(
+        None, help="Maximum listings to crawl (defaults to batch_size)."
+    ),
+    locale: str = typer.Option("sk", help="Locale used for warmup requests."),
+    warmup: bool = typer.Option(True, help="Warm up Vinted session before crawling."),
+    download_delay: Optional[float] = typer.Option(
+        None,
+        min=0,
+        help="Override Scrapy download delay (seconds).",
+    ),
+    concurrent_requests: Optional[int] = typer.Option(
+        None,
+        min=1,
+        help="Override Scrapy concurrent requests.",
+    ),
+    log_level: Optional[str] = typer.Option(
+        None,
+        help="Scrapy log level override (e.g., DEBUG, INFO).",
+    ),
+) -> None:
+    """Run the Scrapy detail worker to backfill missing listing fields."""
+
+    run_detail_spider(
+        batch_size=batch_size,
+        source=source,
+        limit=limit,
+        locale=locale,
+        warmup=warmup,
+        download_delay=download_delay,
+        concurrent_requests=concurrent_requests,
+        log_level=log_level,
     )
 
 
@@ -833,4 +939,3 @@ Features:
 
 if __name__ == "__main__":
     app()
-

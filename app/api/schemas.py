@@ -31,6 +31,7 @@ class ListingBase(BaseModel):
     source: Optional[str] = None  # Source marketplace (vinted, bazos, etc.)
     category_id: Optional[int] = None
     platform_ids: Optional[list] = None
+    details_scraped: bool = False
 
 
 class ListingResponse(ListingBase):
@@ -377,6 +378,14 @@ class StatsResponse(BaseModel):
     inactive_listings_today: int
     inactive_listings_last_7_days: int
     inactive_listings_last_30_days: int
+    active_listings_day_before_previous: int
+    total_scraped_last_7_days_day_before_previous: int
+    total_scraped_last_30_days_day_before_previous: int
+    active_listings_last_7_days_day_before_previous: int
+    active_listings_last_30_days_day_before_previous: int
+    inactive_listings_day_before_previous: int
+    inactive_listings_last_7_days_day_before_previous: int
+    inactive_listings_last_30_days_day_before_previous: int
     active_configs: int
     avg_price_cents: Optional[float] = None
     min_price_cents: Optional[int] = None
@@ -387,6 +396,9 @@ class StatsResponse(BaseModel):
     total_listings_previous_day: int
     total_listings_previous_7_days: int
     total_listings_previous_30_days: int
+    total_scraped_previous_day: int
+    total_scraped_previous_7_days: int
+    total_scraped_previous_30_days: int
     source_stats: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 class ListingsByPeriod(BaseModel):
