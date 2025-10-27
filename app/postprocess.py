@@ -167,7 +167,12 @@ async def process_title_correction(
                 else:
                     logger.info(f"[{idx}/{total}]")
 
-                logger.info(f"Correcting title for: {listing.original_title}")
+                if not listing.title:
+                    logger.warning(f"Skipping title correction for listing ID {listing.id}: title is empty or None.")
+                    errors += 1
+                    continue
+
+                logger.info(f"Correcting title for: {listing.title}")
 
                 corrected_title = await correct_title_with_llm(listing.title) # LLM works on current title
 
@@ -204,7 +209,7 @@ async def process_title_correction(
                 await asyncio.sleep(delay + random.uniform(0, 0.5))
 
             except Exception as e:
-                logger.error(f"Error correcting title for {listing.original_title}: {e}")
+                logger.error(f"Error correcting title for {listing.title}: {e}")
                 errors += 1
                 await session.rollback()
                 continue
