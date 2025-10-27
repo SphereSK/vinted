@@ -263,99 +263,34 @@ def build_scrape_command(
     # Redirect output to log file
     command_with_logging = f"{command} >> {log_file} 2>&1"
 
-    if healthcheck_ping_url:
-        sanitized_ping = validate_base_url(healthcheck_ping_url)
-        base_ping = sanitized_ping.rstrip("/")
-        success_url = base_ping
-        fail_url = f"{base_ping}{HEALTHCHECK_FAIL_SUFFIX}"
-        curl_cmd = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES}"
-        wrapped = f"({command_with_logging}; status=$?; if [ $status -eq 0 ]; then {curl_cmd} {_quote(success_url)} >/dev/null 2>&1; else {curl_cmd} {_quote(fail_url)} >/dev/null 2>&1; fi; exit $status)"
+    if config_id:
+        # Always ping internal health check endpoint
+        internal_health_url = f"{FASTAPI_BASE_URL}/api/cron/health/{config_id}"
+        curl_cmd_success_internal = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES} -X POST -H 'Content-Type: application/json' -d '{{\"status\":\"ok\"}}' {_quote(internal_health_url)}"
+        curl_cmd_fail_internal = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES} -X POST -H 'Content-Type: application/json' -d '{{\"status\":\"fail\"}}' {_quote(internal_health_url)}"
+
+        success_commands = [curl_cmd_success_internal]
+        fail_commands = [curl_cmd_fail_internal]
+
+        # If healthchecks.io URL is provided, add it to the commands
+        if healthcheck_ping_url:
+            sanitized_ping = validate_base_url(healthcheck_ping_url)
+            base_ping = sanitized_ping.rstrip("/")
+            success_url_external = base_ping
+            fail_url_external = f"{base_ping}{HEALTHCHECK_FAIL_SUFFIX}"
+            curl_cmd_success_external = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES} {_quote(success_url_external)}"
+            curl_cmd_fail_external = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES} {_quote(fail_url_external)}"
+            success_commands.append(curl_cmd_success_external)
+            fail_commands.append(curl_cmd_fail_external)
+        
+        success_command_str = " && ".join(f"({cmd} >/dev/null 2>&1)" for cmd in success_commands)
+        fail_command_str = " && ".join(f"({cmd} >/dev/null 2>&1)" for cmd in fail_commands)
+
+        wrapped = f"({command_with_logging}; status=$?; if [ $status -eq 0 ]; then {success_command_str}; else {fail_command_str}; fi; exit $status)"
         return f"cd {_quote(cwd)} && {wrapped}"
 
     return f"cd {_quote(cwd)} && {command_with_logging}"
 
-    sanitized_order = validate_order(order)
-    sanitized_extras = sanitize_extra_arguments(extra_filters)
-    sanitized_locales = sanitize_locales(locales)
-    sanitized_error_wait = validate_positive_int(error_wait_minutes, "error_wait_minutes", minimum=0)
-    sanitized_max_retries = validate_positive_int(max_retries, "max_retries", minimum=0)
-    sanitized_base_url = validate_base_url(base_url)
-    sanitized_details_strategy = validate_details_strategy(details_strategy)
-    sanitized_details_concurrency = validate_positive_int(
-        details_concurrency, "details_concurrency", minimum=1
-    )
-
-    tokens.extend(["--search-text", search_text])
-    tokens.extend(["--max-pages", str(max_pages)])
-    tokens.extend(["--per-page", str(per_page)])
-    tokens.extend(["--delay", str(delay)])
-
-    for cat_id in categories or []:
-        tokens.extend(["-c", str(cat_id)])
-
-    for plat_id in platform_ids or []:
-        tokens.extend(["-p", str(plat_id)])
-
-    if fetch_details:
-        tokens.append("--fetch-details")
-
-    if details_for_new_only:
-        tokens.append("--details-for-new-only")
-
-    if sanitized_order:
-        tokens.extend(["--order", sanitized_order])
-
-    for extra_filter in sanitized_extras:
-        tokens.extend(["-e", extra_filter])
-
-    for locale in sanitized_locales:
-        tokens.extend(["--locale", locale])
-
-    resolved_use_proxy = DEFAULT_USE_PROXY if use_proxy is None else use_proxy
-    if not resolved_use_proxy:
-        tokens.append("--no-proxy")
-
-    if sanitized_error_wait is not None:
-        tokens.extend(["--error-wait", str(sanitized_error_wait)])
-
-    if sanitized_max_retries is not None:
-        tokens.extend(["--max-retries", str(sanitized_max_retries)])
-
-    if sanitized_base_url:
-        tokens.extend(["--base-url", sanitized_base_url])
-
-    if sanitized_details_strategy:
-        tokens.extend(["--details-strategy", sanitized_details_strategy])
-
-    if sanitized_details_concurrency is not None:
-        tokens.extend(["--details-concurrency", str(sanitized_details_concurrency)])
-
-    safe_extra_args = sanitize_extra_arguments(extra_args)
-    for arg in safe_extra_args:
-        tokens.extend(shlex.split(arg))
-
-    if config_id is not None:
-        tokens.extend(["--config-id", str(config_id)])
-
-    command = " ".join(_quote(token) for token in tokens)
-    cwd = Path(workdir) if workdir else PROJECT_ROOT
-    log_dir = PROJECT_ROOT / "logs"
-    log_dir.mkdir(exist_ok=True)
-    log_file = log_dir / "cron.log"
-
-    # Redirect output to log file
-    command_with_logging = f"{command} >> {log_file} 2>&1"
-
-    if healthcheck_ping_url:
-        sanitized_ping = validate_base_url(healthcheck_ping_url)
-        base_ping = sanitized_ping.rstrip("/")
-        success_url = base_ping
-        fail_url = f"{base_ping}{HEALTHCHECK_FAIL_SUFFIX}"
-        curl_cmd = f"curl -fsS -m {HEALTHCHECK_TIMEOUT} --retry {HEALTHCHECK_RETRIES}"
-        wrapped = f"({command_with_logging}; status=$?; if [ $status -eq 0 ]; then {curl_cmd} {_quote(success_url)} >/dev/null 2>&1; else {curl_cmd} {_quote(fail_url)} >/dev/null 2>&1; fi; exit $status)"
-        return f"cd {_quote(cwd)} && {wrapped}"
-
-    return f"cd {_quote(cwd)} && {command_with_logging}"
 
 def get_user_crontab() -> CronTab:
     """Get the current user's crontab."""
@@ -368,7 +303,7 @@ async def sync_crontab() -> None:
     This function should be called whenever configs are created/updated/deleted.
     """
     await init_db()
-    cron = await asyncio.to_thread(get_user_crontab)
+    cron = get_user_crontab()
 
     # Remove all existing vinted-scraper jobs
     await asyncio.to_thread(_purge_vinted_jobs, cron)
@@ -416,12 +351,12 @@ async def sync_crontab() -> None:
 
     # Write to system
     await asyncio.to_thread(cron.write)
-    await load_listings_to_cache_async() # Call the async version
+    await asyncio.to_thread(load_listings_to_cache)
 
 
 async def list_scheduled_jobs() -> list[dict[str, object]]:
     """List all scheduled vinted-scraper jobs."""
-    cron = await asyncio.to_thread(get_user_crontab)
+    cron = get_user_crontab()
     jobs: list[dict[str, object]] = []
 
     for job in cron:
@@ -450,7 +385,7 @@ async def list_scheduled_jobs() -> list[dict[str, object]]:
 
 async def remove_all_jobs() -> int:
     """Remove all vinted-scraper cron jobs."""
-    cron = await asyncio.to_thread(get_user_crontab)
+    cron = get_user_crontab()
     count = await asyncio.to_thread(_purge_vinted_jobs, cron)
     await asyncio.to_thread(cron.write)
     return count
@@ -484,6 +419,7 @@ if __name__ == "__main__":
             else:
                 print("No scheduled jobs found.")
         elif sys.argv[1] == "clear":
-            asyncio.run(remove_all_jobs())
+            count = asyncio.run(remove_all_jobs())
+            print(f"Removed {count} jobs.")
     else:
         print("Usage: python -m app.scheduler [sync|list|clear]")

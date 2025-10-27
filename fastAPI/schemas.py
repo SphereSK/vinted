@@ -16,6 +16,20 @@ from app.scheduler import (
 )
 
 
+class CronHealthStatus(BaseModel):
+    """Health status of a cron job."""
+
+    config_id: int
+    status: Optional[str] = None
+    checked_at: Optional[datetime] = None
+
+
+class CronHealthUpdateRequest(BaseModel):
+    """Request to update cron job health status."""
+
+    status: str
+
+
 class RuntimeStatusResponse(BaseModel):
     config_id: int
     status: str

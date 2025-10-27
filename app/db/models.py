@@ -202,6 +202,8 @@ class ScrapeConfig(Base):
     last_run_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     last_run_status: Mapped[Optional[str]] = mapped_column(String(64))  # "success", "failed", "running"
     last_run_items: Mapped[Optional[int]] = mapped_column(Integer)  # Number of items scraped
+    last_health_status: Mapped[Optional[str]] = mapped_column(String(64))  # "ok", "fail"
+    last_health_check_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_scrape_configs_active", "is_active"),

@@ -10,9 +10,17 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import type { CronJobEntry, ScrapeConfigResponse } from "@/lib/types";
+import { HealthStatusBadge } from "./HealthStatusBadge";
 
 interface CronSectionProps {
   jobs: CronJobEntry[];
@@ -107,7 +115,7 @@ export function CronSection({
             Loading cron jobs…
           </div>
         ) : error ? (
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="text-sm text-destructive">{error.toString()}</p>
         ) : jobs.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No cron jobs configured yet. Use sync to pull active schedules.
@@ -120,6 +128,7 @@ export function CronSection({
                 <TableHead>Configuration</TableHead>
                 <TableHead>Command</TableHead>
                 <TableHead className="w-[120px]">Status</TableHead>
+                <TableHead className="w-[120px]">Health</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -131,8 +140,8 @@ export function CronSection({
                 const configLabel = config
                   ? config.name
                   : job.config_id != null
-                    ? `Config #${job.config_id}`
-                    : "Manual entry";
+                  ? `Config #${job.config_id}`
+                  : "Manual entry";
 
                 return (
                   <TableRow key={`${job.comment ?? job.command}-${index}`}>
@@ -177,6 +186,9 @@ export function CronSection({
                       >
                         {job.enabled ? "Enabled" : "Disabled"}
                       </Badge>
+                    </TableCell>
+                    <TableCell className="align-top">
+                      {job.config_id && <HealthStatusBadge configId={job.config_id} />}
                     </TableCell>
                   </TableRow>
                 );

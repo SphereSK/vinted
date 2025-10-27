@@ -370,5 +370,21 @@ class StatsResponse(BaseModel):
     total_listings: int
     active_listings: int
     total_scraped_today: int
+    total_scraped_last_7_days: int
+    total_scraped_last_30_days: int
+    active_listings_last_7_days: int
+    active_listings_last_30_days: int
+    inactive_listings_today: int
+    inactive_listings_last_7_days: int
+    inactive_listings_last_30_days: int
     active_configs: int
     avg_price_cents: Optional[float] = None
+    min_price_cents: Optional[int] = None
+    max_price_cents: Optional[int] = None
+    price_increase_count: int
+    price_decrease_count: int
+    price_unchanged_count: int
+    total_listings_previous_day: int
+    total_listings_previous_7_days: int
+    total_listings_previous_30_days: int
+    source_stats: dict[str, dict[str, int]] = Field(default_factory=dict)

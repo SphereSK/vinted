@@ -10,14 +10,18 @@ from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# ======================================================
+#   Ensure Chromium Portable
+# ======================================================
+
 def ensure_chromium_installed() -> str:
     """
     Ensure portable Chromium is available in ~/.local/share/undetected_chromedriver.
-    If not, download and extract it automatically from the public snapshot endpoint.
+    If not, download and extract it automatically.
     """
     base_dir = os.path.expanduser("~/.local/share/undetected_chromedriver")
 
-    # Try both possible directory names
+    # Try existing binaries first
     for chrome_dir_name in ["chrome-linux64", "chrome-linux"]:
         chrome_dir = os.path.join(base_dir, chrome_dir_name)
         chrome_bin = os.path.join(chrome_dir, "chrome")
@@ -49,7 +53,6 @@ def ensure_chromium_installed() -> str:
 
     os.remove(zip_path)
 
-    # Check again for both possible directory names after extraction
     for chrome_dir_name in ["chrome-linux64", "chrome-linux"]:
         chrome_dir = os.path.join(base_dir, chrome_dir_name)
         chrome_bin = os.path.join(chrome_dir, "chrome")
@@ -59,46 +62,98 @@ def ensure_chromium_installed() -> str:
 
     raise RuntimeError("Could not locate extracted Chromium binary")
 
-def init_driver(headless: bool = True):
+
+# ======================================================
+#   Initialize Headless Browser
+# ======================================================
+
+async def init_driver(headless: bool = True):
     """
-    Initializes a new undetected-chromedriver instance.
+    Initializes a new undetected-chromedriver instance (portable & sandbox-safe).
     """
-    chrome_path = (
-        shutil.which("google-chrome")
-        or shutil.which("chromium")
-        or shutil.which("chromium-browser")
-        or ensure_chromium_installed()
-    )
+    # Always prefer local portable Chromium to avoid Snap sandbox
+    chrome_path = ensure_chromium_installed()
 
     options = ChromeOptions()
     if headless:
         options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--window-size=1280,800")
-    options.add_argument("--disable-web-security")
-    options.add_argument("--disable-features=IsolateOrigins,site-per-process")
-    options.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    logger.info(f"Using Chrome binary: {chrome_path}")
-    driver = uc.Chrome(options=options, browser_executable_path=chrome_path)
-    return driver
+    # Sandbox-safe options for VPS / Docker / Snap
+    flags = [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1280,800",
+        "--disable-web-security",
+        "--disable-features=IsolateOrigins,site-per-process",
+        "--single-process",
+        "--no-zygote",
+        "--remote-debugging-port=0",  # dynamic port
+    ]
+    for flag in flags:
+        options.add_argument(flag)
 
-async def get_html_with_browser(url: str, driver = None) -> str:
+    options.add_argument(
+        "--user-agent=Mozilla/5.0 (X11; Linux x86_64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+
+    logger.info(f"Using portable Chromium binary: {chrome_path}")
+
+    # Print version (optional debug)
+    try:
+        process = await asyncio.create_subprocess_shell(
+            f"{chrome_path} --version",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await process.communicate()
+        if stdout:
+            logger.info(f"Chromium version: {stdout.decode().strip()}")
+        if stderr and b"memlock" not in stderr:
+            logger.warning(f"Chromium version stderr: {stderr.decode().strip()}")
+    except Exception as e:
+        logger.warning(f"Could not get Chromium version: {e}")
+
+    # Create driver instance
+    try:
+        driver = uc.Chrome(options=options, browser_executable_path=chrome_path, headless=headless)
+        return driver
+    except Exception as e:
+        logger.error(f"Failed to init browser: {e}", exc_info=True)
+        raise
+
+
+# ======================================================
+#   HTML Fetch via Browser
+# ======================================================
+
+async def get_html_with_browser(url: str, driver=None) -> str:
     """
     Fetches the HTML of a page using a headless browser to bypass Cloudflare.
     """
     should_quit = False
     if driver is None:
-        driver = init_driver()
+        driver = await init_driver()
         should_quit = True
 
     try:
         await asyncio.to_thread(driver.get, url)
-        await asyncio.sleep(5)  # Wait for the page to load
-        return driver.page_source
+        await asyncio.sleep(5)  # give time for Cloudflare challenge
+        html = driver.page_source or ""
+        if "<html" not in html:
+            raise ValueError("Empty or invalid HTML response")
+        return html
+    except Exception as e:
+        logger.error(f"Error in get_html_with_browser: {e}", exc_info=True)
+        return "<html><body>Error fetching page</body></html>"
     finally:
         if should_quit and driver:
-            driver.quit()
+            try:
+                driver.quit()
+            except Exception:
+                pass

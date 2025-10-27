@@ -91,11 +91,11 @@ export function ListingRow({ listing, conditions, platforms, sources, categories
       </TableCell>
 
       <TableCell className="text-xs text-muted-foreground">
-        {formatDate(listing.last_seen_at)}
+        {formatDate(listing.last_seen_at, "CET")}
       </TableCell>
 
       <TableCell className="text-xs text-muted-foreground">
-        {formatDate(listing.first_seen_at)}
+        {formatDate(listing.first_seen_at, "CET")}
       </TableCell>
 
       <TableCell className="text-xs text-muted-foreground">

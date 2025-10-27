@@ -1,9 +1,19 @@
 """Cron scheduling endpoints."""
-from fastapi import APIRouter, Depends, HTTPException
+import datetime as dt
 
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+
+from app.db.models import ScrapeConfig
+from app.db.session import Session
 from app.scheduler import build_scrape_command, list_scheduled_jobs, sync_crontab
 from fastAPI.dependencies import require_api_key
-from fastAPI.schemas import CronCommandRequest, CronCommandResponse
+from fastAPI.schemas import (
+    CronCommandRequest,
+    CronCommandResponse,
+    CronHealthStatus,
+    CronHealthUpdateRequest,
+)
 
 router = APIRouter(
     prefix="/api/cron",
@@ -62,3 +72,41 @@ async def build_job_command(payload: CronCommandRequest) -> CronCommandResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return CronCommandResponse(command=command, schedule=payload.schedule)
+
+
+@router.post("/health/{config_id}")
+async def update_health_status(
+    config_id: int, payload: CronHealthUpdateRequest
+) -> dict:
+    """Update the health status of a cron job."""
+    async with Session() as session:
+        result = await session.execute(
+            select(ScrapeConfig).where(ScrapeConfig.id == config_id)
+        )
+        config = result.scalars().first()
+        if not config:
+            raise HTTPException(status_code=404, detail="Config not found")
+
+        config.last_health_status = payload.status
+        config.last_health_check_at = dt.datetime.now(dt.timezone.utc)
+        await session.commit()
+
+    return {"message": "Health status updated"}
+
+
+@router.get("/health/{config_id}", response_model=CronHealthStatus)
+async def get_health_status(config_id: int) -> CronHealthStatus:
+    """Get the health status of a cron job."""
+    async with Session() as session:
+        result = await session.execute(
+            select(ScrapeConfig).where(ScrapeConfig.id == config_id)
+        )
+        config = result.scalars().first()
+        if not config:
+            raise HTTPException(status_code=404, detail="Config not found")
+
+    return CronHealthStatus(
+        config_id=config.id,
+        status=config.last_health_status,
+        checked_at=config.last_health_check_at,
+    )
