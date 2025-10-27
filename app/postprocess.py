@@ -1,32 +1,16 @@
-# app/postprocess.py
 import asyncio
-import requests
 import time
 import random
 from sqlalchemy import select, update
 from app.db.models import Listing
 from app.db.session import Session, init_db
-from app.scraper.parse_detail import parse_detail_html
 from app.utils.language import detect_language_from_item
 from app.utils.logging import get_logger
-
-
-# -----------------------------------------------------
-# HTTP Settings
-# -----------------------------------------------------
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/126.0.0.0 Safari/537.36"
-    ),
-    "Accept-Language": "en-US,en;q=0.9",
-}
+from app.utils.title_corrector import correct_title_with_llm
 
 
 async def process_language_detection(
     limit: int = None,
-    delay: float = 1.5,
     source: str = None,
     logger = None,
 ):
@@ -38,7 +22,6 @@ async def process_language_detection(
 
     Args:
         limit: Maximum number of listings to process (None = all)
-        delay: Delay between requests in seconds (default: 1.5)
         source: Filter by source (e.g., 'vinted', 'bazos')
     """
     if not logger:
@@ -86,27 +69,10 @@ async def process_language_detection(
                 else:
                     logger.info(f"[{idx}/{total}]")
 
-                logger.info(f"Fetching: {listing.url}")
-
-                # Fetch HTML
-                response = requests.get(
-                    listing.url,
-                    headers=HEADERS,
-                    timeout=30
-                )
-
-                if response.status_code != 200:
-                    logger.warning(f"HTTP {response.status_code}, skipping")
-                    errors += 1
-                    continue
-
-                # Parse HTML for details
-                details = parse_detail_html(response.text)
-
-                # Detect language
-                detected_lang = detect_language_from_item(
+                # Detect language using existing DB data
+                detected_lang = await asyncio.to_thread(detect_language_from_item,
                     title=listing.title or "",
-                    description=details.get("description") or listing.description or ""
+                    description=listing.description or ""
                 )
 
                 # Update listing
@@ -116,7 +82,6 @@ async def process_language_detection(
                         .where(Listing.id == listing.id)
                         .values(
                             language=detected_lang,
-                            description=details.get("description") or listing.description
                         )
                     )
                     await session.execute(stmt)
@@ -128,11 +93,103 @@ async def process_language_detection(
                     logger.warning("Could not detect language")
                     errors += 1
 
+            except Exception as e:
+                logger.error(f"Error: {e}")
+                errors += 1
+                await session.rollback()
+                continue
+
+        elapsed = time.time() - start_time
+        elapsed_str = f"{int(elapsed // 60)}m {int(elapsed % 60)}s"
+
+        logger.info("Completed in %s", elapsed_str)
+        logger.info(f"Processed: {processed}")
+        logger.info(f"Errors: {errors}")
+        logger.info(f"Total: {total}")
+
+async def process_title_correction(
+    limit: int = None,
+    delay: float = 1.5,
+    source: str = None,
+    logger = None,
+):
+    """
+    Post-process existing listings to correct and standardize titles using an LLM.
+
+    Args:
+        limit: Maximum number of listings to process (None = all)
+        delay: Delay between requests in seconds (default: 1.5)
+        source: Filter by source (e.g., 'vinted', 'bazos')
+    """
+    if not logger:
+        logger = get_logger(__name__)
+
+    await init_db()
+
+    async with Session() as session:
+        # Find listings where title is the same as original_title (meaning it hasn't been corrected yet)
+        # and is_active is True
+        query = select(Listing).where(
+            Listing.title == Listing.original_title,
+            Listing.is_active == True
+        )
+
+        if source:
+            query = query.where(Listing.source == source)
+
+        if limit:
+            query = query.limit(limit)
+
+        result = await session.execute(query)
+        listings = result.scalars().all()
+
+        if not listings:
+            logger.info("No listings need title correction")
+            return
+
+        total = len(listings)
+        logger.info(f"Processing {total} listing(s) for title correction...")
+
+        processed = 0
+        errors = 0
+        start_time = time.time()
+
+        for idx, listing in enumerate(listings, 1):
+            try:
+                # Calculate ETA
+                if idx > 1:
+                    elapsed = time.time() - start_time
+                    avg_time = elapsed / (idx - 1)
+                    remaining = total - idx + 1
+                    eta_seconds = avg_time * remaining
+                    eta_str = f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
+                    logger.info(f"[{idx}/{total}] ~{eta_str} remaining")
+                else:
+                    logger.info(f"[{idx}/{total}]")
+
+                logger.info(f"Correcting title for: {listing.original_title}")
+
+                corrected_title = await correct_title_with_llm(listing.original_title)
+
+                if corrected_title and corrected_title != listing.original_title:
+                    stmt = (
+                        update(Listing)
+                        .where(Listing.id == listing.id)
+                        .values(title=corrected_title)
+                    )
+                    await session.execute(stmt)
+                    await session.commit()
+
+                    logger.info(f"Corrected title to: {corrected_title}")
+                    processed += 1
+                else:
+                    logger.info("Title did not need correction or correction failed.")
+
                 # Delay between requests
                 await asyncio.sleep(delay + random.uniform(0, 0.5))
 
             except Exception as e:
-                logger.error(f"Error: {e}")
+                logger.error(f"Error correcting title for {listing.original_title}: {e}")
                 errors += 1
                 await session.rollback()
                 continue
