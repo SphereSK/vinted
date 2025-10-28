@@ -754,43 +754,17 @@ def verify_status(
     """
     🔍 Verify status of tracked items (sold/removed/still available).
 
-    This command checks items we're already tracking to determine if they've
-    been sold, removed, or are still available. It fetches their detail pages
-    and updates is_visible, is_active, and is_sold accordingly.
+    Checks items not seen recently by fetching detail pages and updating
+    is_visible, is_active, is_sold. Run daily to catch sold items.
 
-    ═══════════════════════════════════════════════════════════════
-    💡 WHEN TO USE:
-    ═══════════════════════════════════════════════════════════════
+    EXAMPLES:
 
-    1. After fast catalog scraping (to check items that disappeared)
-    2. Daily/weekly to maintain accurate sold status
-    3. To verify items marked inactive but status unknown
+        vinted-scraper verify-status              # 100 items, 24h (default)
+        vinted-scraper verify-status --all        # Check inactive items too
+        vinted-scraper verify-status -b 50 -h 12  # 50 items, 12 hours
+        vinted-scraper verify-status -d 3.0       # Slower (avoid 403)
 
-    ═══════════════════════════════════════════════════════════════
-    📊 EXAMPLES:
-    ═══════════════════════════════════════════════════════════════
-
-    # Check 100 active items not seen in last 24 hours
-    vinted-scraper verify-status
-
-    # Check ALL items (including inactive ones)
-    vinted-scraper verify-status --all
-
-    # Check 50 items not seen in last 12 hours
-    vinted-scraper verify-status --batch-size 50 --hours 12
-
-    # Slower verification to avoid rate limits
-    vinted-scraper verify-status --delay 3.0
-
-    ═══════════════════════════════════════════════════════════════
-    ⏱️  PERFORMANCE:
-    ═══════════════════════════════════════════════════════════════
-
-    - Speed: ~2-3 seconds per item (with delays)
-    - 100 items: ~5-8 minutes
-    - Recommended: Run daily via cron
-
-    ═══════════════════════════════════════════════════════════════
+    PERFORMANCE: ~2-3 sec/item | 100 items = ~5-8 min
     """
     from app.verify_status import verify_tracked_items
 
