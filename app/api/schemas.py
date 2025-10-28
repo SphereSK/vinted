@@ -40,7 +40,7 @@ class ListingResponse(ListingBase):
     first_seen_at: datetime
     last_seen_at: datetime
     is_active: bool
-    is_visible: bool  # From Vinted catalog API - tracks if item is visible on marketplace
+    is_visible: bool = True  # From Vinted catalog API - tracks if item is visible on marketplace, default True for old records
     is_sold: bool
     previous_price_cents: Optional[int] = None
     price_change: Optional[str] = None  # "up", "down", "same"
