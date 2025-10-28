@@ -7,7 +7,7 @@ to determine if they've been sold, removed, or are still available.
 import asyncio
 import time
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy import select, update
 from bs4 import BeautifulSoup
@@ -104,7 +104,7 @@ async def verify_tracked_items(
 
     async with Session() as session:
         # Find items to verify (active but not seen recently)
-        cutoff_time = datetime.now() - timedelta(hours=hours_since_last_seen)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_since_last_seen)
 
         query = (
             select(Listing)
