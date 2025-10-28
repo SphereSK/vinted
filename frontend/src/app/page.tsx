@@ -72,6 +72,7 @@ export default function VintedControlCenter() {
       condition: params.get("condition") || undefined,
       platform: params.get("platform") || undefined,
       source: params.get("source") || undefined,
+      category: params.get("category") || undefined,
       currency: params.get("currency") || undefined,
       is_sold: params.get("is_sold") ? params.get("is_sold") === "true" : undefined,
     };
@@ -177,6 +178,7 @@ export default function VintedControlCenter() {
     if (listingsQuery.condition) params.set("condition", listingsQuery.condition);
     if (listingsQuery.platform) params.set("platform", listingsQuery.platform);
     if (listingsQuery.source) params.set("source", listingsQuery.source);
+    if (listingsQuery.category) params.set("category", listingsQuery.category);
     if (listingsQuery.currency) params.set("currency", listingsQuery.currency);
     if (listingsQuery.is_sold !== undefined) params.set("is_sold", listingsQuery.is_sold.toString());
 

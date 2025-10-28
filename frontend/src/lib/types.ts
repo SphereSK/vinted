@@ -183,6 +183,7 @@ export interface ListingsQuery {
   condition?: string;
   source?: string;
   platform?: string;
+  category?: string;
   is_sold?: boolean;
   price_min?: number;
   price_max?: number;

@@ -18,7 +18,6 @@ import type {
   PlatformResponse,
   SourceResponse,
   ConditionResponse,
-  ListingResponse,
 } from "@/lib/types";
 
 interface FilterPanelProps {
@@ -30,7 +29,6 @@ interface FilterPanelProps {
   platforms: PlatformResponse[];
   sources: SourceResponse[];
   conditions: ConditionResponse[];
-  listings?: ListingResponse[];
   totalResults?: number;
   isLoading?: boolean;
   isSold?: boolean;
@@ -50,7 +48,6 @@ export function FilterPanel({
   platforms,
   sources,
   conditions,
-  listings = [],
   totalResults = 0,
   isLoading = false,
   isSold,
@@ -74,16 +71,11 @@ export function FilterPanel({
     }
   };
 
-  // Get unique values from current listings
-  const availableConditions = conditions.filter((c) =>
-    listings.some((l) => l.condition_label === c.label)
-  );
-  const availablePlatforms = platforms.filter((p) =>
-    listings.some((l) => l.platform_names?.includes(p.name))
-  );
-  const availableSources = sources.filter((s) =>
-    listings.some((l) => l.source_label === s.label)
-  );
+  // Show all options from database (not filtered by current page)
+  // This allows users to see and select all available filter values
+  const availableConditions = conditions;
+  const availablePlatforms = platforms;
+  const availableSources = sources;
   const availableCategories = categories;
 
   return (
@@ -136,7 +128,7 @@ export function FilterPanel({
             <div className="w-[160px]">
               <FilterSection
                 label=""
-                options={availableConditions.length > 0 ? availableConditions : conditions}
+                options={availableConditions}
                 selectedValues={filters.conditions || []}
                 onSelectionChange={(values) => onFilterChange("conditions", values)}
                 placeholder="Condition"
@@ -148,7 +140,7 @@ export function FilterPanel({
             <div className="w-[160px]">
               <FilterSection
                 label=""
-                options={availablePlatforms.length > 0 ? availablePlatforms : platforms}
+                options={availablePlatforms}
                 selectedValues={filters.platforms || []}
                 onSelectionChange={(values) => onFilterChange("platforms", values)}
                 placeholder="Platform"
@@ -160,7 +152,7 @@ export function FilterPanel({
             <div className="w-[160px]">
               <FilterSection
                 label=""
-                options={availableSources.length > 0 ? availableSources : sources}
+                options={availableSources}
                 selectedValues={filters.sources || []}
                 onSelectionChange={(values) => onFilterChange("sources", values)}
                 placeholder="Source"

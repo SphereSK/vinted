@@ -81,7 +81,7 @@ export function ListingsSection({
     conditions: query.condition ? [query.condition] : [],
     platforms: query.platform ? [query.platform] : [],
     sources: query.source ? [query.source] : [],
-    categories: [],
+    categories: query.category ? [query.category] : [],
   }), [query]);
 
   const handleFilterChange = useCallback((key: keyof FilterRequest, value: string | number | string[] | undefined) => {
@@ -98,6 +98,9 @@ export function ListingsSection({
     } else if (key === "sources") {
       const values = value as string[];
       onQueryChange({ source: values[0] || undefined, page: 1 });
+    } else if (key === "categories") {
+      const values = value as string[];
+      onQueryChange({ category: values[0] || undefined, page: 1 });
     }
   }, [onQueryChange]);
 
@@ -109,6 +112,7 @@ export function ListingsSection({
     if ("conditions" in updates) queryUpdates.condition = updates.conditions?.[0];
     if ("platforms" in updates) queryUpdates.platform = updates.platforms?.[0];
     if ("sources" in updates) queryUpdates.source = updates.sources?.[0];
+    if ("categories" in updates) queryUpdates.category = updates.categories?.[0];
     onQueryChange(queryUpdates);
   }, [onQueryChange]);
 
@@ -120,6 +124,7 @@ export function ListingsSection({
       condition: undefined,
       platform: undefined,
       source: undefined,
+      category: undefined,
       currency: undefined,
       is_sold: undefined,
       page: 1,
@@ -196,7 +201,6 @@ export function ListingsSection({
           platforms={platforms}
           sources={sources}
           conditions={conditions}
-          listings={listingsPage?.items || []}
           totalResults={listingsPage?.total_items ?? 0}
           isLoading={isLoading}
           isSold={query.is_sold}
