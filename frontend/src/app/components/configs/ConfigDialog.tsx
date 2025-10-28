@@ -236,26 +236,33 @@ export function ConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="relative max-h-[85vh] max-w-5xl overflow-y-auto">
+      <DialogContent className="max-w-5xl max-h-[90vh] p-0 flex flex-col gap-0" showCloseButton={false}>
         <DialogClose asChild>
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
-            className="absolute right-3 top-3"
+            className="absolute right-3 top-3 z-10"
             aria-label="Close configuration dialog"
           >
             <X className="size-4" />
           </Button>
         </DialogClose>
 
-        <form onSubmit={handleSubmit} className="grid gap-6">
+        {/* Fixed Header */}
+        <div className="flex-shrink-0 px-6 pt-6 pb-4 border-b">
           <DialogHeader>
             <DialogTitle>{config ? "Edit configuration" : "New configuration"}</DialogTitle>
             <DialogDescription>
               Configure search filters, scraping behavior, and scheduling for this job.
             </DialogDescription>
           </DialogHeader>
+        </div>
+
+        {/* Scrollable Content */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            <div className="grid gap-6">
 
           {/* ── Basic fields ─────────────────────────────── */}
           <div className="grid gap-4 md:grid-cols-2">
@@ -501,15 +508,20 @@ export function ConfigDialog({
             )}
           </div>
 
-          {/* ── Footer ───────────────────────────────────── */}
-          <DialogFooter className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? <Loader2 className="size-4 animate-spin" /> : "Save configuration"}
-            </Button>
-          </DialogFooter>
+            </div> {/* Close grid gap-6 */}
+          </div> {/* Close scrollable content */}
+
+          {/* Fixed Footer */}
+          <div className="flex-shrink-0 px-6 py-4 border-t bg-background">
+            <DialogFooter className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? <Loader2 className="size-4 animate-spin" /> : "Save configuration"}
+              </Button>
+            </DialogFooter>
+          </div>
         </form>
       </DialogContent>
     </Dialog>
