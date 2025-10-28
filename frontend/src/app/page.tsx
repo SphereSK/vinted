@@ -214,6 +214,23 @@ export default function VintedControlCenter() {
     }
   };
 
+  const handleToggleActive = async (config: ScrapeConfigResponse, newActiveState: boolean) => {
+    try {
+      await updateScrapeConfig(config.id, { is_active: newActiveState });
+      toast.success(
+        newActiveState
+          ? `Configuration "${config.name}" enabled`
+          : `Configuration "${config.name}" disabled`
+      );
+      queryClient.invalidateQueries({ queryKey: ["configs"] });
+    } catch (error) {
+      console.error("Failed to toggle config:", error);
+      toast.error("Failed to update configuration", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  };
+
   return (
     <main className="mx-auto flex w-full flex-col gap-6 p-6">
       <header className="flex flex-col gap-2 border-b pb-4 md:flex-row md:items-center md:justify-between">
@@ -285,6 +302,7 @@ export default function VintedControlCenter() {
             onEdit={handleEditConfig}
             onCopy={handleCopyConfig}
             onRun={(config) => runConfig(config.id)}
+            onToggleActive={handleToggleActive}
           />
         </TabsContent>
 

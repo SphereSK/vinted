@@ -16,8 +16,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Play, Pencil, Trash2, Copy } from "lucide-react";
+import { Play, Pencil, Trash2, Copy, Power, PowerOff } from "lucide-react";
 import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 
 import type { ScrapeConfigResponse, RuntimeStatusResponse } from "@/lib/types";
 import { StatusBadge } from "../common/StatusBadge";
@@ -30,6 +32,7 @@ interface ConfigsSectionProps {
   onCopy?: (config: ScrapeConfigResponse) => void;
   onRun?: (config: ScrapeConfigResponse) => Promise<void> | void;
   onDelete?: (config: ScrapeConfigResponse) => Promise<void> | void;
+  onToggleActive?: (config: ScrapeConfigResponse, newActiveState: boolean) => Promise<void> | void;
 }
 
 export function ConfigsSection({
@@ -39,6 +42,7 @@ export function ConfigsSection({
   onCopy,
   onRun,
   onDelete,
+  onToggleActive,
 }: ConfigsSectionProps) {
   console.log("ConfigsSection received configs:", configs);
   if (!configs.length) {
@@ -74,6 +78,7 @@ export function ConfigsSection({
               <TableHead>Name</TableHead>
               <TableHead>Search text</TableHead>
               <TableHead>Schedule</TableHead>
+              <TableHead>Active</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-48">Last run</TableHead>
               <TableHead className="w-[160px]" />
@@ -81,12 +86,24 @@ export function ConfigsSection({
           </TableHeader>
           <TableBody>
             {configs.map((config) => (
-              <TableRow key={config.id}>
+              <TableRow key={config.id} className={!config.is_active ? "opacity-60" : ""}>
                 <TableCell>
-                  <div className="flex flex-col">
-                    <span className="font-medium">{config.name}</span>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{config.name}</span>
+                      <Badge
+                        variant={config.is_active ? "default" : "secondary"}
+                        className={config.is_active ? "bg-green-500 hover:bg-green-600" : ""}
+                      >
+                        {config.is_active ? (
+                          <><Power className="size-3 mr-1" /> Active</>
+                        ) : (
+                          <><PowerOff className="size-3 mr-1" /> Inactive</>
+                        )}
+                      </Badge>
+                    </div>
                     <span className="text-xs text-muted-foreground">
-                      {config.is_active ? "Active" : "Inactive"} · {config.max_pages} pages · delay {formatDelaySeconds(config.delay)}s
+                      {config.max_pages} pages · delay {formatDelaySeconds(config.delay)}s
                     </span>
                     <span className="text-xs text-muted-foreground">
                       Proxy {formatProxyFlag(config.use_proxy)} · Strategy {config.details_strategy ?? "browser"}
@@ -108,6 +125,19 @@ export function ConfigsSection({
                 </TableCell>
                 <TableCell className="text-sm">
                   {config.cron_schedule ?? "Manual"}
+                </TableCell>
+                <TableCell>
+                  {onToggleActive ? (
+                    <Switch
+                      checked={config.is_active}
+                      onCheckedChange={(checked) => void onToggleActive(config, checked)}
+                      title={config.is_active ? "Disable configuration" : "Enable configuration"}
+                    />
+                  ) : (
+                    <span className="text-sm text-muted-foreground">
+                      {config.is_active ? "Enabled" : "Disabled"}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <StatusBadge status={statuses[config.id]} />
