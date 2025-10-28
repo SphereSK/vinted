@@ -30,6 +30,7 @@ def parse_catalog_item(it: CatalogItem) -> Dict[str, Any]:
     # Extract seller name and ID from catalog API (available in raw_data)
     seller_name = None
     seller_id = None
+    is_visible = True  # Default to True
     raw_data = safe_attr(it, "raw_data", {})
     if raw_data and isinstance(raw_data, dict):
         user_data = raw_data.get("user", {})
@@ -45,6 +46,9 @@ def parse_catalog_item(it: CatalogItem) -> Dict[str, Any]:
         # Extract brand, size if available
         brand = raw_data.get("brand_title")
         size = raw_data.get("size_title")
+
+        # Extract is_visible - KEY field for detecting sold/removed items
+        is_visible = raw_data.get("is_visible", True)
     else:
         # Fallback to direct attributes
         brand = safe_attr(it, "brand_title")
@@ -65,6 +69,7 @@ def parse_catalog_item(it: CatalogItem) -> Dict[str, Any]:
         "brand": brand,
         "size": size,
         "condition": condition,
+        "is_visible": is_visible,
     }
 
 def parse_catalog_page(items: List[CatalogItem]) -> List[Dict[str, Any]]:

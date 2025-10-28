@@ -186,7 +186,16 @@ async def upsert_listing(session, data: dict):
             "platform_ids": stmt.excluded.platform_ids,
             "details_scraped": stmt.excluded.details_scraped,
             "last_seen_at": func.now(),
-            "is_active": True,
+            # Mark as active if item is visible, inactive if not visible
+            "is_active": stmt.excluded.is_visible,
+            "is_visible": stmt.excluded.is_visible,
+            # Auto-detect sold: if item was visible and now is not, likely sold
+            # But preserve existing is_sold=True status (don't revert)
+            "is_sold": func.coalesce(
+                stmt.excluded.is_sold,  # From HTML if available
+                Listing.is_sold,  # Keep existing sold status
+                False  # Default to False
+            ),
             "vinted_id": stmt.excluded.vinted_id,
             "condition_option_id": stmt.excluded.condition_option_id,
             "source_option_id": stmt.excluded.source_option_id,
@@ -440,6 +449,8 @@ async def _scrape_and_store_locale(
         page_times = []
         detail_metrics = {'success': 0, 'failed': 0, 'total_time': 0}
         scraped_successfully = False # Flag to track if any items were scraped successfully
+        consecutive_empty_pages = 0 # Track pages with 0 new items
+        max_consecutive_empty = 3 # Stop after 3 pages with no new items
 
         semaphore = asyncio.Semaphore(details_concurrency)
 
@@ -468,7 +479,7 @@ async def _scrape_and_store_locale(
 
             items = None
             try:
-                items = await search_items_with_current_retry(url=url, per_page=per_page)
+                items = await search_items_with_current_retry(url=url, per_page=per_page, page=page)
             except Exception as e:
                 logger.error(f"Failed to load page {page} after multiple retries: {e}")
 
@@ -580,6 +591,16 @@ async def _scrape_and_store_locale(
             page_elapsed = time.time() - page_start
             page_times.append(page_elapsed)
             logger.info(f"Page {page} complete: {page_item_count} items ({page_new_count} new, {page_updated_count} updated) in {page_elapsed:.1f}s")
+
+            # Early exit if we hit consecutive pages with no new items
+            if page_new_count == 0:
+                consecutive_empty_pages += 1
+                logger.info(f"No new items on page {page} ({consecutive_empty_pages}/{max_consecutive_empty} consecutive empty pages)")
+                if consecutive_empty_pages >= max_consecutive_empty:
+                    logger.info(f"Stopping early: {consecutive_empty_pages} consecutive pages with no new items")
+                    break
+            else:
+                consecutive_empty_pages = 0  # Reset counter when we find new items
 
             await asyncio.sleep(delay)
 

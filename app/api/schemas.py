@@ -40,6 +40,8 @@ class ListingResponse(ListingBase):
     first_seen_at: datetime
     last_seen_at: datetime
     is_active: bool
+    is_visible: bool  # From Vinted catalog API - tracks if item is visible on marketplace
+    is_sold: bool
     previous_price_cents: Optional[int] = None
     price_change: Optional[str] = None  # "up", "down", "same"
     category_name: Optional[str] = None
@@ -396,6 +398,7 @@ class StatsResponse(BaseModel):
     total_listings_previous_day: int
     total_listings_previous_7_days: int
     total_listings_previous_30_days: int
+    total_listings_day_before_previous: int
     total_scraped_previous_day: int
     total_scraped_previous_7_days: int
     total_scraped_previous_30_days: int

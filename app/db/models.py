@@ -108,6 +108,8 @@ class Listing(Base):
     first_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=func.now())
     last_seen_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_visible: Mapped[bool] = mapped_column(Boolean, default=True)  # From Vinted catalog API
+    is_sold: Mapped[bool] = mapped_column(Boolean, default=False)
     details_scraped: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -147,6 +149,7 @@ class Listing(Base):
         Index("ix_listings_vinted_id", "vinted_id"),
         Index("ix_listings_category_id", "category_id"),
         Index("ix_listings_details_scraped", "details_scraped"),
+        Index("ix_listings_is_visible", "is_visible"),
         {"schema": settings.schema} if settings.database_url.startswith("postgresql") else {}
     )
 

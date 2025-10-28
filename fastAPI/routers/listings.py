@@ -63,10 +63,10 @@ async def load_listings_to_cache(db: AsyncSession, redis):
         await redis.delete(*keys)
 
     logger.info("Loading listings to cache...")
-    listings_query = select(Listing).options(selectinload(Listing.prices)).where(Listing.is_active.is_(True))
+    listings_query = select(Listing).options(selectinload(Listing.prices))
     listings_result = await db.execute(listings_query)
     listings = listings_result.scalars().all()
-    logger.info(f"Found {len(listings)} active listings to load into cache.")
+    logger.info(f"Found {len(listings)} listings to load into cache.")
 
     # Load master data for lookups
     category_records = (await db.execute(select(CategoryOption.id, CategoryOption.name, CategoryOption.color))).all()
@@ -93,6 +93,7 @@ async def load_listings_to_cache(db: AsyncSession, redis):
         logger.debug(f"Listing source_option: {listing.source_option}")
         logger.debug(f"Listing platform_ids: {listing.platform_ids}")
         logger.debug(f"Listing price_cents: {listing.price_cents}")
+        logger.debug(f"Listing is_sold: {listing.is_sold}")
 
         listing_data = {
             "id": listing.id,
@@ -100,6 +101,8 @@ async def load_listings_to_cache(db: AsyncSession, redis):
             "first_seen_at": listing.first_seen_at,
             "last_seen_at": listing.last_seen_at,
             "is_active": listing.is_active,
+            "is_visible": listing.is_visible,
+            "is_sold": listing.is_sold,
             "details_scraped": listing.details_scraped,
             "title": listing.title,
             "price_cents": listing.price_cents,
@@ -231,6 +234,7 @@ async def list_listings(
     platform_id: Optional[int] = Query(None, ge=1),
     source_id: Optional[int] = Query(None, ge=1),
     source: Optional[str] = Query(None),
+    is_sold: Optional[bool] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(15, ge=1, le=100),
     limit: Optional[int] = Query(None, ge=1, le=1000),
@@ -242,7 +246,7 @@ async def list_listings(
         raise HTTPException(status_code=500, detail="Redis not available.")
 
     # Construct a cache key based on the query parameters
-    cache_key = f"listings:{search}:{active_only}:{sort_field}:{sort_order}:{currency}:{price_min}:{price_max}:{condition_id}:{condition}:{category_id}:{platform_id}:{source_id}:{source}:{page}:{page_size}"
+    cache_key = f"listings:{search}:{active_only}:{sort_field}:{sort_order}:{currency}:{price_min}:{price_max}:{condition_id}:{condition}:{category_id}:{platform_id}:{source_id}:{source}:{is_sold}:{page}:{page_size}"
 
     # Try to fetch the specific paginated/filtered data from the cache first
     logger.info(f"Attempting to fetch specific query from cache with key: {cache_key}")
@@ -315,6 +319,8 @@ async def list_listings(
             listing_source_code = listing.get("source_code")
             if not (listing_source_code and listing_source_code == source):
                 continue
+        if is_sold is not None and listing.get("is_sold") != is_sold:
+            continue
 
         filtered_listings.append(listing)
 
