@@ -155,6 +155,75 @@ vinted-scraper detect-language --limit 50 --delay 1.5
 psql $DATABASE_URL -c "SELECT title, price_cents/100.0 FROM vinted.listings WHERE language='en' AND is_active=true;"
 ```
 
+### Status Verification (Post-Processing)
+
+The `verify-status` command is a **post-processing step** that solves a critical gap: items that disappear from catalog searches (sold/removed) are never checked again, leaving their status stale.
+
+**When to use**:
+- To verify status of items not seen in recent catalog scrapes
+- To distinguish between sold items and removed items
+- To maintain accurate `is_active`, `is_visible`, and `is_sold` flags
+- Recommended: Run daily via cron
+
+**How it works**:
+1. Finds items marked `is_active=True` but not seen recently (configurable hours)
+2. Fetches detail page for each item
+3. Detects status:
+   - **404 response** → Item removed (is_visible=False, is_sold=False)
+   - **"Predané"/"Sprzedane"/"Prodáno"/"Sold" text** → Item sold (is_sold=True)
+   - **Page loads normally** → Still available (is_visible=True)
+4. Updates database with correct status
+
+```bash
+# Verify 100 oldest items not seen in last 24 hours
+vinted-scraper verify-status
+
+# Custom batch size and threshold
+vinted-scraper verify-status --batch-size 50 --hours 48
+
+# Faster checking (less delay between requests)
+vinted-scraper verify-status --batch-size 200 --hours 24 --delay 1.5
+```
+
+**Performance**: ~3 seconds per item with default 2.0 delay (to avoid rate limits)
+
+**Output Example**:
+```
+Verifying status of 5 items not seen in 24+ hours...
+[1/5] Checking FC 26 na PS5...
+  🔴 SOLD
+[2/5] Checking Gran Turismo 7 gra ps5... (~0m 12s remaining)
+  🔴 SOLD
+[3/5] Checking FC25 PS5... (~0m 10s remaining)
+  🔴 SOLD
+[4/5] Checking Silent Hill 2... (~0m 6s remaining)
+  🟡 REMOVED/UNAVAILABLE
+[5/5] Checking Split Fiction... (~0m 3s remaining)
+  🔴 SOLD
+
+============================================================
+Verification Complete!
+Time: 0m 15s
+Checked: 5 items
+  🟢 Still available: 0
+  🔴 Sold: 4
+  🟡 Removed: 1
+  ❌ Errors: 0
+============================================================
+```
+
+**Recommended Workflow**:
+```bash
+# Step 1: Fast catalog scraping (finds new items, updates prices)
+vinted-scraper scrape --search-text "ps5" -c 3026 -p 1281 --no-proxy --max-pages 20
+
+# Step 2: Verify status of old items not in recent searches
+vinted-scraper verify-status --batch-size 100 --hours 24
+
+# Step 3: Query accurate active listings
+psql $DATABASE_URL -c "SELECT title, price_cents/100.0 FROM vinted.listings WHERE is_active=true AND is_visible=true ORDER BY last_seen_at DESC;"
+```
+
 ### Web Dashboard
 
 ```bash
@@ -364,6 +433,7 @@ vinted/
 │   ├── config.py           # Environment variable settings
 │   ├── ingest.py           # Main scraping logic + upsert
 │   ├── postprocess.py      # Post-processing (language detection, etc.)
+│   ├── verify_status.py    # Post-processing (item status verification)
 │   ├── scheduler.py        # Cron integration
 │   ├── api/
 │   │   ├── main.py         # FastAPI app
@@ -519,10 +589,21 @@ ENABLE_DB_LOGGING=true
 ---
 
 **Dashboard**: http://localhost:8000
-**Last Updated**: 2025-10-14
+**Last Updated**: 2025-10-28
 **Documentation**: See `DATA_FIELDS_GUIDE.md` and `SCRAPER_BEHAVIOR.md`
 
 ## Recent Changes
+
+### 2025-10-28: Item Status Verification & Tracking
+- Added `is_visible` field to track item visibility from catalog API (fast detection)
+- Fixed pagination bug where scraper looped through same pages repeatedly
+- Created `verify-status` command for proactive status checking of tracked items
+- Multi-language sold detection (Slovak, Polish, Czech, English)
+- Distinguishes between sold items vs removed items (404)
+- Added database migration: `migrations/007_add_is_visible_column.sql`
+- Updated catalog parser to extract `is_visible` from raw_data
+- Updated upsert logic to sync `is_active` with `is_visible`
+- **Recommended**: Run `verify-status` daily via cron to maintain accurate item status
 
 ### 2025-10-14: Post-Processing & Multi-Source Support
 - Added `source` field to listings table for multi-marketplace support (vinted, bazos, etc.)
