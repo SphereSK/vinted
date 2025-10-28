@@ -36,7 +36,6 @@ export interface ListingsPage {
 export interface ScrapeConfigResponse {
   id: number;
   name: string;
-  url?: string;
   search_text: string;
   categories: number[] | null;
   platform_ids: number[] | null;

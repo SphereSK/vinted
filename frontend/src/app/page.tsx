@@ -161,17 +161,33 @@ export default function VintedControlCenter() {
   };
 
   const handleCopyConfig = (config: ScrapeConfigResponse) => {
-    // Create a copy without id and with modified name
-    const copiedConfig = {
-      ...config,
-      id: undefined as any, // Will be assigned by backend
+    // Create a copy with only the fields that are valid for creation
+    // Exclude: id, url, created_at, last_run_at, last_run_status, last_run_items, last_health_status, last_health_check_at
+    const copiedConfig: Partial<ScrapeConfigResponse> = {
       name: `Copy of ${config.name}`,
-      last_run_at: null,
-      last_run_status: null,
-      last_run_items: null,
-      created_at: undefined,
+      search_text: config.search_text,
+      categories: config.categories,
+      platform_ids: config.platform_ids,
+      order: config.order,
+      extra_filters: config.extra_filters,
+      locales: config.locales,
+      extra_args: config.extra_args,
+      max_pages: config.max_pages,
+      per_page: config.per_page,
+      delay: config.delay,
+      fetch_details: config.fetch_details,
+      details_for_new_only: config.details_for_new_only,
+      use_proxy: config.use_proxy,
+      error_wait_minutes: config.error_wait_minutes,
+      max_retries: config.max_retries,
+      base_url: config.base_url,
+      details_strategy: config.details_strategy,
+      details_concurrency: config.details_concurrency,
+      cron_schedule: config.cron_schedule,
+      is_active: config.is_active,
+      healthcheck_ping_url: config.healthcheck_ping_url,
     };
-    setSelectedConfig(copiedConfig);
+    setSelectedConfig(copiedConfig as ScrapeConfigResponse);
     setConfigDialogOpen(true);
   };
 
