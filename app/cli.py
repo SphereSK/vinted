@@ -724,6 +724,78 @@ def scrape_details(
     )
 
 
+@app.command("verify-status")
+def verify_status(
+    batch_size: int = typer.Option(
+        100,
+        "--batch-size",
+        "-b",
+        help="Number of items to verify (default: 100)"
+    ),
+    hours: int = typer.Option(
+        24,
+        "--hours",
+        "-h",
+        help="Check items not seen in this many hours (default: 24)"
+    ),
+    delay: float = typer.Option(
+        2.0,
+        "--delay",
+        "-d",
+        help="Delay between requests in seconds (default: 2.0)"
+    ),
+):
+    """
+    🔍 Verify status of tracked items (sold/removed/still available).
+
+    This command checks items we're already tracking to determine if they've
+    been sold, removed, or are still available. It fetches their detail pages
+    and updates is_visible, is_active, and is_sold accordingly.
+
+    ═══════════════════════════════════════════════════════════════
+    💡 WHEN TO USE:
+    ═══════════════════════════════════════════════════════════════
+
+    1. After fast catalog scraping (to check items that disappeared)
+    2. Daily/weekly to maintain accurate sold status
+    3. To verify items marked inactive but status unknown
+
+    ═══════════════════════════════════════════════════════════════
+    📊 EXAMPLES:
+    ═══════════════════════════════════════════════════════════════
+
+    # Check 100 items not seen in last 24 hours
+    vinted-scraper verify-status
+
+    # Check 50 items not seen in last 12 hours
+    vinted-scraper verify-status --batch-size 50 --hours 12
+
+    # Slower verification to avoid rate limits
+    vinted-scraper verify-status --delay 3.0
+
+    ═══════════════════════════════════════════════════════════════
+    ⏱️  PERFORMANCE:
+    ═══════════════════════════════════════════════════════════════
+
+    - Speed: ~2-3 seconds per item (with delays)
+    - 100 items: ~5-8 minutes
+    - Recommended: Run daily via cron
+
+    ═══════════════════════════════════════════════════════════════
+    """
+    from app.verify_status import verify_tracked_items
+
+    logger = get_logger(__name__)
+    asyncio.run(
+        verify_tracked_items(
+            batch_size=batch_size,
+            hours_since_last_seen=hours,
+            delay=delay,
+            logger=logger,
+        )
+    )
+
+
 @app.command()
 def examples():
     """
