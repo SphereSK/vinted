@@ -423,7 +423,7 @@ async def _scrape_and_store_locale(
     driver = None
     if fetch_details and strategy == "browser":
         try:
-            driver = init_driver()
+            driver = await init_driver()
         except Exception as e:
             logger.error(f"Failed to initialize browser: {e}")
             return
