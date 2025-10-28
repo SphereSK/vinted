@@ -22,6 +22,7 @@ import type {
   StatsResponse,
   ListingsPage,
   ScrapeConfigResponse,
+  ScrapeConfigWritePayload,
   RuntimeStatusResponse,
   CronJobEntry,
   CronCommandResponse,
@@ -41,6 +42,8 @@ import {
   syncCron,
   fetchListings,
   runScrapeConfig,
+  createScrapeConfig,
+  updateScrapeConfig,
   listConditions,
   listSources,
   fetchListingsByPeriod,
@@ -172,6 +175,29 @@ export default function VintedControlCenter() {
     setConfigDialogOpen(true);
   };
 
+  const handleSaveConfig = async (payload: ScrapeConfigWritePayload) => {
+    try {
+      if (selectedConfig?.id) {
+        // Update existing config
+        await updateScrapeConfig(selectedConfig.id, payload);
+        toast.success("Configuration updated successfully");
+      } else {
+        // Create new config
+        await createScrapeConfig(payload);
+        toast.success("Configuration created successfully");
+      }
+      // Refresh configs list
+      queryClient.invalidateQueries({ queryKey: ["configs"] });
+      setConfigDialogOpen(false);
+    } catch (error) {
+      console.error("Failed to save config:", error);
+      toast.error("Failed to save configuration", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+      throw error; // Re-throw to let ConfigDialog handle it
+    }
+  };
+
   return (
     <main className="mx-auto flex w-full flex-col gap-6 p-6">
       <header className="flex flex-col gap-2 border-b pb-4 md:flex-row md:items-center md:justify-between">
@@ -265,6 +291,7 @@ export default function VintedControlCenter() {
         config={selectedConfig}
         categories={categories}
         platforms={platforms}
+        onSave={handleSaveConfig}
       />
     </main>
   );
