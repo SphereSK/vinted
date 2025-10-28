@@ -14,8 +14,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { X, Loader2, Copy } from "lucide-react";
 import { toast } from "sonner";
 
@@ -68,10 +66,27 @@ export function ConfigDialog({
   platforms,
   onSave,
 }: ConfigDialogProps) {
+  // Helper to convert array to comma-separated string
+  const arrayToString = (arr: (string | number)[] | null | undefined): string => {
+    if (!arr || !Array.isArray(arr)) return "";
+    return arr.join(",");
+  };
+
   // Local editable state based on incoming config
   const [form, setForm] = useState(() =>
     config
-      ? { ...config }
+      ? {
+          ...config,
+          categories: arrayToString(config.categories),
+          platform_ids: arrayToString(config.platform_ids),
+          extra_filters: arrayToString(config.extra_filters),
+          locales: arrayToString(config.locales),
+          extra_args: arrayToString(config.extra_args),
+          base_url: config.base_url || "",
+          order: config.order || "",
+          cron_schedule: config.cron_schedule || "",
+          healthcheck_ping_url: config.healthcheck_ping_url || "",
+        }
       : {
           name: "",
           search_text: "",
@@ -100,7 +115,18 @@ export function ConfigDialog({
 
   useEffect(() => {
     if (config) {
-      setForm({ ...config });
+      setForm({
+        ...config,
+        categories: arrayToString(config.categories),
+        platform_ids: arrayToString(config.platform_ids),
+        extra_filters: arrayToString(config.extra_filters),
+        locales: arrayToString(config.locales),
+        extra_args: arrayToString(config.extra_args),
+        base_url: config.base_url || "",
+        order: config.order || "",
+        cron_schedule: config.cron_schedule || "",
+        healthcheck_ping_url: config.healthcheck_ping_url || "",
+      });
     } else {
       setForm({
         name: "",
@@ -161,15 +187,41 @@ export function ConfigDialog({
     }
   }
 
+  // Helper to convert comma-separated string to array
+  const stringToArray = (str: string): string[] | undefined => {
+    const trimmed = str.trim();
+    if (!trimmed) return undefined;
+    return trimmed.split(",").map((s) => s.trim()).filter(Boolean);
+  };
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isSaving) return;
     setIsSaving(true);
     try {
       const payload: ScrapeConfigWritePayload = {
-        ...form,
         name: form.name.trim(),
         search_text: form.search_text.trim(),
+        categories: stringToArray(form.categories as string),
+        platform_ids: stringToArray(form.platform_ids as string),
+        order: form.order || undefined,
+        extra_filters: stringToArray(form.extra_filters as string),
+        locales: stringToArray(form.locales as string),
+        extra_args: stringToArray(form.extra_args as string),
+        max_pages: form.max_pages,
+        per_page: form.per_page,
+        delay: form.delay,
+        fetch_details: form.fetch_details,
+        details_for_new_only: form.details_for_new_only,
+        use_proxy: form.use_proxy,
+        error_wait_minutes: form.error_wait_minutes || undefined,
+        max_retries: form.max_retries || undefined,
+        base_url: form.base_url || undefined,
+        details_strategy: form.details_strategy,
+        details_concurrency: form.details_concurrency,
+        cron_schedule: form.cron_schedule || undefined,
+        is_active: form.is_active,
+        healthcheck_ping_url: form.healthcheck_ping_url || undefined,
       };
       if (onSave) await onSave(payload);
       toast.success("Configuration saved");
@@ -259,7 +311,42 @@ export function ConfigDialog({
             <NumberField label="Delay (seconds)" value={form.delay} onChange={(v) => setForm({ ...form, delay: v })} />
           </div>
 
+          {/* ── Order ─────────────────────────────────────── */}
+          <div className="grid gap-2">
+            <Label htmlFor="order">Sort order</Label>
+            <Select
+              value={form.order || ""}
+              onValueChange={(v) => setForm({ ...form, order: v || "" })}
+            >
+              <SelectTrigger id="order">
+                <SelectValue placeholder="Default order" />
+              </SelectTrigger>
+              <SelectContent>
+                {ORDER_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           {/* ── Switches ──────────────────────────────────── */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <SwitchField
+              label="Config active"
+              description="Enable/disable this scheduled job."
+              checked={form.is_active}
+              onCheckedChange={(v) => setForm({ ...form, is_active: v })}
+            />
+            <SwitchField
+              label="Use proxy"
+              description="Disable to connect directly (recommended in most cases)."
+              checked={form.use_proxy}
+              onCheckedChange={(v) => setForm({ ...form, use_proxy: v })}
+            />
+          </div>
+
           <div className="grid gap-4 md:grid-cols-2">
             <SwitchField
               label="Fetch details"
@@ -268,10 +355,10 @@ export function ConfigDialog({
               onCheckedChange={(v) => setForm({ ...form, fetch_details: v })}
             />
             <SwitchField
-              label="Use proxy"
-              description="Disable to connect directly (recommended in most cases)."
-              checked={form.use_proxy}
-              onCheckedChange={(v) => setForm({ ...form, use_proxy: v })}
+              label="Details for new only"
+              description="Only fetch details for new listings (not updates)."
+              checked={form.details_for_new_only}
+              onCheckedChange={(v) => setForm({ ...form, details_for_new_only: v })}
             />
           </div>
 
@@ -300,6 +387,76 @@ export function ConfigDialog({
               value={form.details_concurrency}
               onChange={(v) => setForm({ ...form, details_concurrency: v })}
               description="Number of concurrent detail fetches."
+            />
+          </div>
+
+          {/* ── Error Handling ────────────────────────────── */}
+          <div className="grid gap-4 md:grid-cols-2">
+            <NumberField
+              label="Error wait (minutes)"
+              value={form.error_wait_minutes}
+              onChange={(v) => setForm({ ...form, error_wait_minutes: v })}
+              description="Minutes to wait on 403 errors."
+            />
+            <NumberField
+              label="Max retries"
+              value={form.max_retries}
+              onChange={(v) => setForm({ ...form, max_retries: v })}
+              description="Maximum retry attempts per page."
+            />
+          </div>
+
+          {/* ── Advanced fields ───────────────────────────── */}
+          <div className="grid gap-2">
+            <Label htmlFor="base_url">Base URL (optional)</Label>
+            <Input
+              id="base_url"
+              value={form.base_url}
+              onChange={(e) => setForm({ ...form, base_url: e.target.value })}
+              placeholder="https://www.vinted.sk/catalog"
+            />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-2">
+              <Label htmlFor="locales">Locales (optional)</Label>
+              <Input
+                id="locales"
+                value={form.locales}
+                onChange={(e) => setForm({ ...form, locales: e.target.value })}
+                placeholder="sk,en,pl"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="healthcheck_ping_url">Healthcheck URL (optional)</Label>
+              <Input
+                id="healthcheck_ping_url"
+                value={form.healthcheck_ping_url}
+                onChange={(e) => setForm({ ...form, healthcheck_ping_url: e.target.value })}
+                placeholder="https://hc-ping.com/..."
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="extra_filters">Extra filters (optional)</Label>
+            <Textarea
+              id="extra_filters"
+              value={form.extra_filters}
+              onChange={(e) => setForm({ ...form, extra_filters: e.target.value })}
+              placeholder="color_ids[]=1&size_ids[]=207"
+              rows={2}
+            />
+          </div>
+
+          <div className="grid gap-2">
+            <Label htmlFor="extra_args">Extra CLI arguments (optional)</Label>
+            <Textarea
+              id="extra_args"
+              value={form.extra_args}
+              onChange={(e) => setForm({ ...form, extra_args: e.target.value })}
+              placeholder="--verbose --log-file /tmp/scraper.log"
+              rows={2}
             />
           </div>
 
