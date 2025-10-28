@@ -87,6 +87,7 @@ async def verify_tracked_items(
     batch_size: int = 100,
     hours_since_last_seen: int = 24,
     delay: float = 2.0,
+    check_all: bool = False,
     logger = None,
 ):
     """
@@ -96,6 +97,7 @@ async def verify_tracked_items(
         batch_size: Number of items to check
         hours_since_last_seen: Check items not seen in this many hours
         delay: Delay between requests (seconds)
+        check_all: If True, check all items (active and inactive). If False, only check active items.
     """
     if not logger:
         logger = get_logger(__name__)
@@ -106,10 +108,14 @@ async def verify_tracked_items(
         # Find items to verify (active but not seen recently)
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_since_last_seen)
 
+        query = select(Listing).where(Listing.last_seen_at < cutoff_time)
+
+        # Optionally filter to only active items
+        if not check_all:
+            query = query.where(Listing.is_active == True)
+
         query = (
-            select(Listing)
-            .where(Listing.is_active == True)
-            .where(Listing.last_seen_at < cutoff_time)
+            query
             .order_by(Listing.last_seen_at.asc())  # Oldest first
             .limit(batch_size)
         )
@@ -118,11 +124,13 @@ async def verify_tracked_items(
         items = result.scalars().all()
 
         if not items:
-            logger.info(f"No items need verification (all seen within {hours_since_last_seen} hours)")
+            scope = "all items" if check_all else "active items"
+            logger.info(f"No items need verification ({scope} seen within {hours_since_last_seen} hours)")
             return
 
         total = len(items)
-        logger.info(f"Verifying status of {total} items not seen in {hours_since_last_seen}+ hours...")
+        scope = "all items" if check_all else "active items"
+        logger.info(f"Verifying status of {total} {scope} not seen in {hours_since_last_seen}+ hours...")
 
         start_time = time.time()
         stats = {

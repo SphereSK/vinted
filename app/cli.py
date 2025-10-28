@@ -744,6 +744,12 @@ def verify_status(
         "-d",
         help="Delay between requests in seconds (default: 2.0)"
     ),
+    check_all: bool = typer.Option(
+        False,
+        "--all",
+        "-a",
+        help="Check ALL items (active and inactive), not just active ones"
+    ),
 ):
     """
     🔍 Verify status of tracked items (sold/removed/still available).
@@ -764,8 +770,11 @@ def verify_status(
     📊 EXAMPLES:
     ═══════════════════════════════════════════════════════════════
 
-    # Check 100 items not seen in last 24 hours
+    # Check 100 active items not seen in last 24 hours
     vinted-scraper verify-status
+
+    # Check ALL items (including inactive ones)
+    vinted-scraper verify-status --all
 
     # Check 50 items not seen in last 12 hours
     vinted-scraper verify-status --batch-size 50 --hours 12
@@ -791,6 +800,7 @@ def verify_status(
             batch_size=batch_size,
             hours_since_last_seen=hours,
             delay=delay,
+            check_all=check_all,
             logger=logger,
         )
     )
