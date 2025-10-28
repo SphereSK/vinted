@@ -28,6 +28,7 @@ import { useState, useEffect } from "react";
 import { NumberField } from "../common/NumberField";
 import { SwitchField } from "../common/SwitchField";
 import { HelperList } from "../common/HelperList";
+import { MultiSelect } from "../common/MultiSelect";
 
 const ORDER_OPTIONS = [
   { value: "newest_first", label: "Newest first" },
@@ -72,13 +73,19 @@ export function ConfigDialog({
     return arr.join(",");
   };
 
+  // Helper to convert number array to number array (for categories/platforms)
+  const toNumberArray = (arr: number[] | null | undefined): number[] => {
+    if (!arr || !Array.isArray(arr)) return [];
+    return arr;
+  };
+
   // Local editable state based on incoming config
   const [form, setForm] = useState(() =>
     config
       ? {
           ...config,
-          categories: arrayToString(config.categories),
-          platform_ids: arrayToString(config.platform_ids),
+          categories: toNumberArray(config.categories),
+          platform_ids: toNumberArray(config.platform_ids),
           extra_filters: arrayToString(config.extra_filters),
           locales: arrayToString(config.locales),
           extra_args: arrayToString(config.extra_args),
@@ -90,8 +97,8 @@ export function ConfigDialog({
       : {
           name: "",
           search_text: "",
-          categories: "",
-          platform_ids: "",
+          categories: [] as number[],
+          platform_ids: [] as number[],
           order: "",
           extra_filters: "",
           locales: "",
@@ -117,8 +124,8 @@ export function ConfigDialog({
     if (config) {
       setForm({
         ...config,
-        categories: arrayToString(config.categories),
-        platform_ids: arrayToString(config.platform_ids),
+        categories: toNumberArray(config.categories),
+        platform_ids: toNumberArray(config.platform_ids),
         extra_filters: arrayToString(config.extra_filters),
         locales: arrayToString(config.locales),
         extra_args: arrayToString(config.extra_args),
@@ -131,8 +138,8 @@ export function ConfigDialog({
       setForm({
         name: "",
         search_text: "",
-        categories: "",
-        platform_ids: "",
+        categories: [] as number[],
+        platform_ids: [] as number[],
         order: "",
         extra_filters: "",
         locales: "",
@@ -202,8 +209,8 @@ export function ConfigDialog({
       const payload: ScrapeConfigWritePayload = {
         name: form.name.trim(),
         search_text: form.search_text.trim(),
-        categories: stringToArray(form.categories as string),
-        platform_ids: stringToArray(form.platform_ids as string),
+        categories: (form.categories as number[]).length > 0 ? (form.categories as number[]) : undefined,
+        platform_ids: (form.platform_ids as number[]).length > 0 ? (form.platform_ids as number[]) : undefined,
         order: form.order || undefined,
         extra_filters: stringToArray(form.extra_filters as string),
         locales: stringToArray(form.locales as string),
@@ -282,26 +289,20 @@ export function ConfigDialog({
 
           {/* ── Categories / Platforms ────────────────────── */}
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="grid gap-2">
-              <Label htmlFor="categories">Categories (IDs)</Label>
-              <Input
-                id="categories"
-                value={form.categories}
-                onChange={(e) => setForm({ ...form, categories: e.target.value })}
-                placeholder="3026,1953"
-              />
-              <HelperList items={categories} />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="platform_ids">Platform IDs</Label>
-              <Input
-                id="platform_ids"
-                value={form.platform_ids}
-                onChange={(e) => setForm({ ...form, platform_ids: e.target.value })}
-                placeholder="1280,1281"
-              />
-              <HelperList items={platforms} />
-            </div>
+            <MultiSelect
+              label="Categories"
+              options={categories}
+              selected={form.categories as number[]}
+              onChange={(selected) => setForm({ ...form, categories: selected })}
+              placeholder="Select categories..."
+            />
+            <MultiSelect
+              label="Platform IDs"
+              options={platforms}
+              selected={form.platform_ids as number[]}
+              onChange={(selected) => setForm({ ...form, platform_ids: selected })}
+              placeholder="Select platforms..."
+            />
           </div>
 
           {/* ── Numeric fields ────────────────────────────── */}

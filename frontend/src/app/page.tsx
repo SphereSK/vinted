@@ -157,6 +157,21 @@ export default function VintedControlCenter() {
     setConfigDialogOpen(true);
   };
 
+  const handleCopyConfig = (config: ScrapeConfigResponse) => {
+    // Create a copy without id and with modified name
+    const copiedConfig = {
+      ...config,
+      id: undefined as any, // Will be assigned by backend
+      name: `Copy of ${config.name}`,
+      last_run_at: null,
+      last_run_status: null,
+      last_run_items: null,
+      created_at: undefined,
+    };
+    setSelectedConfig(copiedConfig);
+    setConfigDialogOpen(true);
+  };
+
   return (
     <main className="mx-auto flex w-full flex-col gap-6 p-6">
       <header className="flex flex-col gap-2 border-b pb-4 md:flex-row md:items-center md:justify-between">
@@ -226,6 +241,7 @@ export default function VintedControlCenter() {
             configs={configs}
             statuses={{}}
             onEdit={handleEditConfig}
+            onCopy={handleCopyConfig}
             onRun={(config) => runConfig(config.id)}
           />
         </TabsContent>

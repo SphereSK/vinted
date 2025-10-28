@@ -16,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Play, Pencil, Trash2 } from "lucide-react";
+import { Play, Pencil, Trash2, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 import type { ScrapeConfigResponse, RuntimeStatusResponse } from "@/lib/types";
@@ -27,6 +27,7 @@ interface ConfigsSectionProps {
   configs: ScrapeConfigResponse[];
   statuses: Record<number, RuntimeStatusResponse | null>;
   onEdit: (config: ScrapeConfigResponse) => void;
+  onCopy?: (config: ScrapeConfigResponse) => void;
   onRun?: (config: ScrapeConfigResponse) => Promise<void> | void;
   onDelete?: (config: ScrapeConfigResponse) => Promise<void> | void;
 }
@@ -35,6 +36,7 @@ export function ConfigsSection({
   configs,
   statuses,
   onEdit,
+  onCopy,
   onRun,
   onDelete,
 }: ConfigsSectionProps) {
@@ -139,15 +141,27 @@ export function ConfigsSection({
                       variant="ghost"
                       size="icon-sm"
                       onClick={() => onEdit(config)}
+                      title="Edit configuration"
                     >
                       <Pencil className="size-4" />
                     </Button>
+                    {onCopy && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={() => onCopy(config)}
+                        title="Copy configuration"
+                      >
+                        <Copy className="size-4" />
+                      </Button>
+                    )}
                     {onDelete && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
                         className="text-destructive hover:bg-destructive/10"
                         onClick={() => void onDelete(config)}
+                        title="Delete configuration"
                       >
                         <Trash2 className="size-4" />
                       </Button>
