@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,7 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Play, Pencil, Trash2, Copy, Power, PowerOff } from "lucide-react";
+import { Play, Pencil, Trash2, Copy, Power, PowerOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +46,55 @@ export function ConfigsSection({
   onToggleActive,
 }: ConfigsSectionProps) {
   console.log("ConfigsSection received configs:", configs);
+
+  // Track loading states for each action type per config
+  const [loadingStates, setLoadingStates] = useState<Record<number, {
+    running?: boolean;
+    copying?: boolean;
+    deleting?: boolean;
+    toggling?: boolean;
+  }>>({});
+
+  const handleRunWithLoading = async (config: ScrapeConfigResponse) => {
+    if (!onRun) return;
+    setLoadingStates((prev) => ({ ...prev, [config.id]: { ...prev[config.id], running: true } }));
+    try {
+      await onRun(config);
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, [config.id]: { ...prev[config.id], running: false } }));
+    }
+  };
+
+  const handleCopyWithLoading = async (config: ScrapeConfigResponse) => {
+    if (!onCopy) return;
+    setLoadingStates((prev) => ({ ...prev, [config.id]: { ...prev[config.id], copying: true } }));
+    try {
+      await onCopy(config);
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, [config.id]: { ...prev[config.id], copying: false } }));
+    }
+  };
+
+  const handleDeleteWithLoading = async (config: ScrapeConfigResponse) => {
+    if (!onDelete) return;
+    setLoadingStates((prev) => ({ ...prev, [config.id]: { ...prev[config.id], deleting: true } }));
+    try {
+      await onDelete(config);
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, [config.id]: { ...prev[config.id], deleting: false } }));
+    }
+  };
+
+  const handleToggleWithLoading = async (config: ScrapeConfigResponse, newActiveState: boolean) => {
+    if (!onToggleActive) return;
+    setLoadingStates((prev) => ({ ...prev, [config.id]: { ...prev[config.id], toggling: true } }));
+    try {
+      await onToggleActive(config, newActiveState);
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, [config.id]: { ...prev[config.id], toggling: false } }));
+    }
+  };
+
   if (!configs.length) {
     return (
       <Card>
@@ -128,11 +178,17 @@ export function ConfigsSection({
                 </TableCell>
                 <TableCell>
                   {onToggleActive ? (
-                    <Switch
-                      checked={config.is_active}
-                      onCheckedChange={(checked) => void onToggleActive(config, checked)}
-                      title={config.is_active ? "Disable configuration" : "Enable configuration"}
-                    />
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={config.is_active}
+                        onCheckedChange={(checked) => void handleToggleWithLoading(config, checked)}
+                        disabled={loadingStates[config.id]?.toggling}
+                        title={config.is_active ? "Disable configuration" : "Enable configuration"}
+                      />
+                      {loadingStates[config.id]?.toggling && (
+                        <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                      )}
+                    </div>
                   ) : (
                     <span className="text-sm text-muted-foreground">
                       {config.is_active ? "Enabled" : "Disabled"}
@@ -162,9 +218,18 @@ export function ConfigsSection({
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => void onRun(config)}
+                        onClick={() => void handleRunWithLoading(config)}
+                        disabled={loadingStates[config.id]?.running}
                       >
-                        <Play className="size-4" /> Run
+                        {loadingStates[config.id]?.running ? (
+                          <>
+                            <Loader2 className="size-4 animate-spin" /> Running...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="size-4" /> Run
+                          </>
+                        )}
                       </Button>
                     )}
                     <Button
@@ -179,10 +244,15 @@ export function ConfigsSection({
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => onCopy(config)}
+                        onClick={() => void handleCopyWithLoading(config)}
+                        disabled={loadingStates[config.id]?.copying}
                         title="Copy configuration"
                       >
-                        <Copy className="size-4" />
+                        {loadingStates[config.id]?.copying ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Copy className="size-4" />
+                        )}
                       </Button>
                     )}
                     {onDelete && (
@@ -190,10 +260,15 @@ export function ConfigsSection({
                         variant="ghost"
                         size="icon-sm"
                         className="text-destructive hover:bg-destructive/10"
-                        onClick={() => void onDelete(config)}
+                        onClick={() => void handleDeleteWithLoading(config)}
+                        disabled={loadingStates[config.id]?.deleting}
                         title="Delete configuration"
                       >
-                        <Trash2 className="size-4" />
+                        {loadingStates[config.id]?.deleting ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="size-4" />
+                        )}
                       </Button>
                     )}
                   </div>
