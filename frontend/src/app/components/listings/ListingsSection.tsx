@@ -120,6 +120,8 @@ export function ListingsSection({
       condition: undefined,
       platform: undefined,
       source: undefined,
+      currency: undefined,
+      is_sold: undefined,
       page: 1,
     });
   }, [onQueryChange]);
@@ -194,8 +196,21 @@ export function ListingsSection({
           platforms={platforms}
           sources={sources}
           conditions={conditions}
+          listings={listingsPage?.items || []}
           totalResults={listingsPage?.total_items ?? 0}
           isLoading={isLoading}
+          isSold={query.is_sold}
+          onSoldChange={(sold) => onQueryChange({ is_sold: sold, page: 1 })}
+          currency={query.currency}
+          availableCurrencies={
+            listingsPage?.items.reduce((acc, item) => {
+              if (item.currency && !acc.includes(item.currency)) {
+                acc.push(item.currency);
+              }
+              return acc;
+            }, [] as string[]) ?? []
+          }
+          onCurrencyChange={(currency) => onQueryChange({ currency, page: 1 })}
         />
       )}
 

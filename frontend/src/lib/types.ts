@@ -130,12 +130,14 @@ export interface PlatformResponse {
 export interface ConditionResponse {
   id: number;
   name: string;
+  label: string;
   color: string | null;
 }
 
 export interface SourceResponse {
   id: number;
   name: string;
+  label: string;
 }
 
 export type ListingSortField =
@@ -184,6 +186,7 @@ export interface ListingsQuery {
   is_sold?: boolean;
   price_min?: number;
   price_max?: number;
+  currency?: string;
 }
 
 export interface FilterRequest {

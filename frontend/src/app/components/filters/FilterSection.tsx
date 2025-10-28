@@ -21,7 +21,8 @@ import { cn } from "@/lib/utils";
 
 interface FilterOption {
   id: number | string;
-  name: string;
+  name?: string;
+  label?: string;
   color?: string | null;
 }
 
@@ -33,6 +34,7 @@ interface FilterSectionProps {
   placeholder?: string;
   searchPlaceholder?: string;
   className?: string;
+  labelField?: "name" | "label";
 }
 
 export function FilterSection({
@@ -43,6 +45,7 @@ export function FilterSection({
   placeholder = "Select...",
   searchPlaceholder = "Search...",
   className = "",
+  labelField = "name",
 }: FilterSectionProps) {
   const [open, setOpen] = useState(false);
 
@@ -58,10 +61,11 @@ export function FilterSection({
   };
 
   const selectedCount = selectedValues.length;
+  const getLabel = (option: FilterOption) => option[labelField] || option.name || option.label || "";
 
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
-      <label className="text-sm font-medium">{label}</label>
+      {label && <label className="text-sm font-medium">{label}</label>}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button
@@ -78,7 +82,7 @@ export function FilterSection({
                   </Badge>
                   <span className="truncate">
                     {selectedCount === 1
-                      ? options.find((opt) => selectedValues.includes(String(opt.id)))?.name
+                      ? getLabel(options.find((opt) => selectedValues.includes(String(opt.id)))!)
                       : `${selectedCount} selected`}
                   </span>
                 </>
@@ -113,7 +117,7 @@ export function FilterSection({
                       >
                         <Check className="h-4 w-4" />
                       </div>
-                      <span>{option.name}</span>
+                      <span>{getLabel(option)}</span>
                       {option.color && (
                         <div
                           className="ml-auto h-3 w-3 rounded-full"

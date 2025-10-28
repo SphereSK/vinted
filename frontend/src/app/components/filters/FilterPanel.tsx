@@ -1,10 +1,15 @@
 "use client";
 
-import { Search, Loader2 } from "lucide-react";
+import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 import { FilterSection } from "./FilterSection";
 import { FilterChips } from "./FilterChips";
 import type {
@@ -13,6 +18,7 @@ import type {
   PlatformResponse,
   SourceResponse,
   ConditionResponse,
+  ListingResponse,
 } from "@/lib/types";
 
 interface FilterPanelProps {
@@ -24,8 +30,14 @@ interface FilterPanelProps {
   platforms: PlatformResponse[];
   sources: SourceResponse[];
   conditions: ConditionResponse[];
+  listings?: ListingResponse[];
   totalResults?: number;
   isLoading?: boolean;
+  isSold?: boolean;
+  onSoldChange?: (sold: boolean | undefined) => void;
+  currency?: string;
+  availableCurrencies?: string[];
+  onCurrencyChange?: (currency: string | undefined) => void;
   className?: string;
 }
 
@@ -38,8 +50,14 @@ export function FilterPanel({
   platforms,
   sources,
   conditions,
+  listings = [],
   totalResults = 0,
   isLoading = false,
+  isSold,
+  onSoldChange,
+  currency,
+  availableCurrencies = [],
+  onCurrencyChange,
   className = "",
 }: FilterPanelProps) {
   const handleRemoveFilter = (key: keyof FilterRequest, value?: string) => {
@@ -56,36 +74,22 @@ export function FilterPanel({
     }
   };
 
-  const handlePriceChange = (values: number[]) => {
-    onFiltersChange({
-      price_min: values[0],
-      price_max: values[1],
-    });
-  };
-
-  const maxPrice = 1000; // Default max price for slider
+  // Get unique values from current listings
+  const availableConditions = conditions.filter((c) =>
+    listings.some((l) => l.condition_label === c.label)
+  );
+  const availablePlatforms = platforms.filter((p) =>
+    listings.some((l) => l.platform_names?.includes(p.name))
+  );
+  const availableSources = sources.filter((s) =>
+    listings.some((l) => l.source_label === s.label)
+  );
+  const availableCategories = categories;
 
   return (
     <Card className={className}>
-      <CardContent className="p-6">
-        <div className="space-y-6">
-          {/* Header with results count */}
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Filters</h3>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Loading...</span>
-                </>
-              ) : (
-                <span>
-                  {totalResults} {totalResults === 1 ? "result" : "results"}
-                </span>
-              )}
-            </div>
-          </div>
-
+      <CardContent className="p-4">
+        <div className="space-y-4">
           {/* Active filter chips */}
           <FilterChips
             filters={filters}
@@ -93,106 +97,133 @@ export function FilterPanel({
             onClearAll={onClearFilters}
           />
 
-          {/* Search input */}
-          <div className="space-y-2">
-            <Label htmlFor="title-search">Search in title</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="title-search"
-                placeholder="Search by title..."
-                value={filters.title || ""}
-                onChange={(e) => onFilterChange("title", e.target.value)}
-                className="pl-9"
-              />
-            </div>
-          </div>
-
-          {/* Price range slider */}
-          <div className="space-y-4">
-            <Label>Price range (€)</Label>
-            <div className="px-2">
-              <Slider
-                value={[filters.price_min || 0, filters.price_max || maxPrice]}
-                onValueChange={handlePriceChange}
-                max={maxPrice}
-                min={0}
-                step={1}
-                className="w-full"
-              />
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex-1">
-                <Label htmlFor="price-min" className="text-xs text-muted-foreground">
-                  Min
-                </Label>
+          {/* All filters in one row */}
+          <div className="flex flex-wrap items-end gap-2">
+            {/* Search input */}
+            <div className="flex-1 min-w-[200px]">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
-                  id="price-min"
-                  type="number"
-                  placeholder="0"
-                  value={filters.price_min || ""}
-                  onChange={(e) =>
-                    onFilterChange("price_min", e.target.value ? Number(e.target.value) : undefined)
-                  }
-                  className="h-8"
-                />
-              </div>
-              <span className="pt-5 text-muted-foreground">—</span>
-              <div className="flex-1">
-                <Label htmlFor="price-max" className="text-xs text-muted-foreground">
-                  Max
-                </Label>
-                <Input
-                  id="price-max"
-                  type="number"
-                  placeholder={String(maxPrice)}
-                  value={filters.price_max || ""}
-                  onChange={(e) =>
-                    onFilterChange("price_max", e.target.value ? Number(e.target.value) : undefined)
-                  }
-                  className="h-8"
+                  placeholder="Search by title..."
+                  value={filters.title || ""}
+                  onChange={(e) => onFilterChange("title", e.target.value)}
+                  className="pl-9 h-9"
                 />
               </div>
             </div>
-          </div>
 
-          {/* Multi-select filters */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <FilterSection
-              label="Condition"
-              options={conditions}
-              selectedValues={filters.conditions || []}
-              onSelectionChange={(values) => onFilterChange("conditions", values)}
-              placeholder="All conditions"
-              searchPlaceholder="Search conditions..."
+            {/* Price inputs */}
+            <Input
+              type="number"
+              placeholder="Min price..."
+              value={filters.price_min ?? ""}
+              onChange={(e) =>
+                onFilterChange("price_min", e.target.value ? Number(e.target.value) : undefined)
+              }
+              className="w-[110px] h-9"
+            />
+            <Input
+              type="number"
+              placeholder="Max price..."
+              value={filters.price_max ?? ""}
+              onChange={(e) =>
+                onFilterChange("price_max", e.target.value ? Number(e.target.value) : undefined)
+              }
+              className="w-[110px] h-9"
             />
 
-            <FilterSection
-              label="Platform"
-              options={platforms}
-              selectedValues={filters.platforms || []}
-              onSelectionChange={(values) => onFilterChange("platforms", values)}
-              placeholder="All platforms"
-              searchPlaceholder="Search platforms..."
-            />
+            {/* Multi-select filters */}
+            <div className="w-[160px]">
+              <FilterSection
+                label=""
+                options={availableConditions.length > 0 ? availableConditions : conditions}
+                selectedValues={filters.conditions || []}
+                onSelectionChange={(values) => onFilterChange("conditions", values)}
+                placeholder="Condition"
+                searchPlaceholder="Search conditions..."
+                labelField="label"
+              />
+            </div>
 
-            <FilterSection
-              label="Source"
-              options={sources}
-              selectedValues={filters.sources || []}
-              onSelectionChange={(values) => onFilterChange("sources", values)}
-              placeholder="All sources"
-              searchPlaceholder="Search sources..."
-            />
+            <div className="w-[160px]">
+              <FilterSection
+                label=""
+                options={availablePlatforms.length > 0 ? availablePlatforms : platforms}
+                selectedValues={filters.platforms || []}
+                onSelectionChange={(values) => onFilterChange("platforms", values)}
+                placeholder="Platform"
+                searchPlaceholder="Search platforms..."
+                labelField="name"
+              />
+            </div>
 
-            <FilterSection
-              label="Category"
-              options={categories}
-              selectedValues={filters.categories || []}
-              onSelectionChange={(values) => onFilterChange("categories", values)}
-              placeholder="All categories"
-              searchPlaceholder="Search categories..."
-            />
+            <div className="w-[160px]">
+              <FilterSection
+                label=""
+                options={availableSources.length > 0 ? availableSources : sources}
+                selectedValues={filters.sources || []}
+                onSelectionChange={(values) => onFilterChange("sources", values)}
+                placeholder="Source"
+                searchPlaceholder="Search sources..."
+                labelField="label"
+              />
+            </div>
+
+            <div className="w-[160px]">
+              <FilterSection
+                label=""
+                options={availableCategories}
+                selectedValues={filters.categories || []}
+                onSelectionChange={(values) => onFilterChange("categories", values)}
+                placeholder="Category"
+                searchPlaceholder="Search categories..."
+                labelField="name"
+              />
+            </div>
+
+            {/* Sold/Unsold Select */}
+            {onSoldChange && (
+              <Select
+                value={isSold === undefined ? "ALL" : isSold ? "true" : "false"}
+                onValueChange={(value) =>
+                  onSoldChange(value === "ALL" ? undefined : value === "true")
+                }
+              >
+                <SelectTrigger className="w-[130px] h-9">
+                  <SelectValue placeholder="Sold Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Items</SelectItem>
+                  <SelectItem value="false">Available</SelectItem>
+                  <SelectItem value="true">Sold</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+
+            {/* Currency Select */}
+            {onCurrencyChange && availableCurrencies.length > 0 && (
+              <Select
+                value={currency ?? "ALL"}
+                onValueChange={(value) => onCurrencyChange(value === "ALL" ? undefined : value)}
+              >
+                <SelectTrigger className="w-[100px] h-9">
+                  <SelectValue placeholder="Currency" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All</SelectItem>
+                  {availableCurrencies.map((cur) => (
+                    <SelectItem key={cur} value={cur}>
+                      {cur}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {/* Results count */}
+            <div className="text-sm text-muted-foreground whitespace-nowrap ml-auto">
+              {isLoading ? "Loading..." : `${totalResults} ${totalResults === 1 ? "result" : "results"}`}
+            </div>
           </div>
         </div>
       </CardContent>
