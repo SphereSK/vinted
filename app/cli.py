@@ -489,6 +489,66 @@ def scrape(
 
 
 @app.command()
+def run_config(
+    config_id: int = typer.Argument(..., help="ID of the scrape configuration to run"),
+):
+    """
+    Run a scrape using a stored configuration from the database.
+
+    This command fetches the configuration from the database and runs the scrape
+    with all the parameters defined in that configuration.
+
+    Example:
+        vinted-scraper run-config 5
+    """
+    import asyncio
+    from sqlalchemy import select
+    from app.db.session import Session
+    from app.db.models import ScrapeConfig
+
+    async def _run():
+        async with Session() as session:
+            result = await session.execute(
+                select(ScrapeConfig).where(ScrapeConfig.id == config_id)
+            )
+            config = result.scalar_one_or_none()
+
+            if not config:
+                typer.secho(f"❌ Configuration #{config_id} not found", fg=typer.colors.RED, err=True)
+                raise typer.Exit(1)
+
+            if not config.is_active:
+                typer.secho(f"⚠️  Configuration #{config_id} is inactive", fg=typer.colors.YELLOW)
+
+            typer.secho(f"🚀 Running scrape for config #{config_id}: {config.name}", fg=typer.colors.CYAN)
+
+            # Run the scrape with config parameters
+            await scrape_and_store(
+                search_text=config.search_text,
+                categories=config.categories or [],
+                platform_ids=config.platform_ids or [],
+                max_pages=config.max_pages,
+                per_page=config.per_page,
+                delay=config.delay,
+                fetch_details=config.fetch_details,
+                details_for_new_only=config.details_for_new_only,
+                use_proxy=config.use_proxy,
+                extra_filters=config.extra_filters or [],
+                order=config.order,
+                locales=config.locales or [],
+                error_wait_minutes=config.error_wait_minutes or 30,
+                max_retries=config.max_retries or 3,
+                base_url=config.base_url,
+                details_strategy=config.details_strategy or "browser",
+                details_concurrency=config.details_concurrency or 2,
+                extra_args=config.extra_args or [],
+                config_id=config_id,
+            )
+
+    asyncio.run(_run())
+
+
+@app.command()
 def categories(
     search: str = typer.Option(None, "--search", "-s", help="Search for categories by name"),
 ):

@@ -320,33 +320,17 @@ async def sync_crontab() -> None:
         )
         configs = result.scalars().all()
 
-        # Add new jobs
+        # Add new jobs using wrapper script to avoid line length limits
+        wrapper_script = PROJECT_ROOT / "run-scraper-cron.sh"
+        if not wrapper_script.exists():
+            raise FileNotFoundError(f"Wrapper script not found: {wrapper_script}")
+
         for config in configs:
             if not config.cron_schedule:
                 continue
 
-            command = build_scrape_command(
-                search_text=config.search_text,
-                max_pages=config.max_pages,
-                per_page=config.per_page,
-                delay=float(config.delay),
-                categories=config.categories,
-                platform_ids=config.platform_ids,
-                fetch_details=config.fetch_details,
-                details_for_new_only=config.details_for_new_only,
-                use_proxy=config.use_proxy,
-                extra_filters=config.extra_filters,
-                order=config.order,
-                locales=config.locales,
-                error_wait_minutes=config.error_wait_minutes,
-                max_retries=config.max_retries,
-                base_url=config.base_url,
-                details_strategy=config.details_strategy,
-                details_concurrency=config.details_concurrency,
-                extra_args=config.extra_args,
-                healthcheck_ping_url=config.healthcheck_ping_url,
-                config_id=config.id,
-            )
+            # Use wrapper script with config ID - much shorter command
+            command = f"{wrapper_script} {config.id}"
 
             job = await asyncio.to_thread(cron.new, command=command, comment=f"{CRON_COMMENT_PREFIX}:{config.id}")
             await asyncio.to_thread(job.setall, validate_cron_expression(config.cron_schedule))
