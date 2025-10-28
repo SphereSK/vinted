@@ -29,6 +29,7 @@ import { NumberField } from "../common/NumberField";
 import { SwitchField } from "../common/SwitchField";
 import { HelperList } from "../common/HelperList";
 import { MultiSelect } from "../common/MultiSelect";
+import { CronScheduler } from "../common/CronScheduler";
 
 const ORDER_OPTIONS = [
   { value: "newest_first", label: "Newest first" },
@@ -39,15 +40,6 @@ const ORDER_OPTIONS = [
 const DETAIL_STRATEGY_OPTIONS = [
   { value: "browser" as const, label: "Browser (Chromium)" },
   { value: "http" as const, label: "HTTP requests" },
-];
-
-const CRON_PRESETS = [
-  { value: "0 * * * *", label: "Hourly" },
-  { value: "0 */6 * * *", label: "Every 6 hours" },
-  { value: "0 0 * * *", label: "Daily at midnight" },
-  { value: "0 9 * * *", label: "Daily at 09:00" },
-  { value: "0 18 * * 1-5", label: "Weekdays at 18:00" },
-  { value: "*/30 * * * *", label: "Every 30 minutes" },
 ];
 
 interface ConfigDialogProps {
@@ -463,22 +455,11 @@ export function ConfigDialog({
 
           {/* ── Cron schedule ─────────────────────────────── */}
           <div className="grid gap-2">
-            <Label htmlFor="cron_schedule">Cron schedule</Label>
-            <Select
+            <Label>Cron schedule</Label>
+            <CronScheduler
               value={form.cron_schedule}
-              onValueChange={(v) => setForm({ ...form, cron_schedule: v })}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a preset" />
-              </SelectTrigger>
-              <SelectContent>
-                {CRON_PRESETS.map((preset) => (
-                  <SelectItem key={preset.value} value={preset.value}>
-                    {preset.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(v) => setForm({ ...form, cron_schedule: v })}
+            />
           </div>
 
           {/* ── Cron preview ─────────────────────────────── */}
