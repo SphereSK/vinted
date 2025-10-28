@@ -38,6 +38,9 @@ def parse_detail_html(html: str) -> Dict[str, Any]:
     lang = soup.find("html", {"lang": True})
     data["language"] = lang.get("lang", None) if lang else None
 
+    # Check for "Predané" (Sold) status
+    data["is_sold"] = bool(soup.find(string="Predané"))
+
     # Photos (from <img> or meta)
     imgs: List[str] = []
     for img in soup.select('img[data-testid="item-photo"], meta[property="og:image"], img[src]'):

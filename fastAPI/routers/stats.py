@@ -139,7 +139,12 @@ async def read_stats(db: AsyncSession = Depends(get_db)) -> StatsResponse:
             await db.execute(
                 select(func.count())
                 .select_from(Listing)
-                .where(func.date(Listing.first_seen_at) >= day_before_previous_seven_days_ago)
+                .where(
+                    and_(
+                        func.date(Listing.first_seen_at) >= day_before_yesterday - timedelta(days=6),
+                        func.date(Listing.first_seen_at) <= day_before_yesterday,
+                    )
+                )
             )
         ).scalar()
 
@@ -147,7 +152,12 @@ async def read_stats(db: AsyncSession = Depends(get_db)) -> StatsResponse:
             await db.execute(
                 select(func.count())
                 .select_from(Listing)
-                .where(func.date(Listing.first_seen_at) >= day_before_previous_thirty_days_ago)
+                .where(
+                    and_(
+                        func.date(Listing.first_seen_at) >= day_before_yesterday - timedelta(days=29),
+                        func.date(Listing.first_seen_at) <= day_before_yesterday,
+                    )
+                )
             )
         ).scalar()
 
@@ -184,7 +194,8 @@ async def read_stats(db: AsyncSession = Depends(get_db)) -> StatsResponse:
                 .where(
                     and_(
                         Listing.is_active.is_(True),
-                        func.date(Listing.first_seen_at) >= day_before_previous_seven_days_ago,
+                        func.date(Listing.first_seen_at) >= day_before_yesterday - timedelta(days=6),
+                        func.date(Listing.first_seen_at) <= day_before_yesterday,
                     )
                 )
             )
@@ -197,7 +208,8 @@ async def read_stats(db: AsyncSession = Depends(get_db)) -> StatsResponse:
                 .where(
                     and_(
                         Listing.is_active.is_(True),
-                        func.date(Listing.first_seen_at) >= day_before_previous_thirty_days_ago,
+                        func.date(Listing.first_seen_at) >= day_before_yesterday - timedelta(days=29),
+                        func.date(Listing.first_seen_at) <= day_before_yesterday,
                     )
                 )
             )
@@ -262,7 +274,8 @@ async def read_stats(db: AsyncSession = Depends(get_db)) -> StatsResponse:
                 .where(
                     and_(
                         Listing.is_active.is_(False),
-                        func.date(Listing.first_seen_at) >= day_before_previous_seven_days_ago,
+                        func.date(Listing.first_seen_at) >= day_before_yesterday - timedelta(days=6),
+                        func.date(Listing.first_seen_at) <= day_before_yesterday,
                     )
                 )
             )
@@ -275,7 +288,8 @@ async def read_stats(db: AsyncSession = Depends(get_db)) -> StatsResponse:
                 .where(
                     and_(
                         Listing.is_active.is_(False),
-                        func.date(Listing.first_seen_at) >= day_before_previous_thirty_days_ago,
+                        func.date(Listing.first_seen_at) >= day_before_yesterday - timedelta(days=29),
+                        func.date(Listing.first_seen_at) <= day_before_yesterday,
                     )
                 )
             )
@@ -387,6 +401,14 @@ async def read_stats(db: AsyncSession = Depends(get_db)) -> StatsResponse:
             )
         ).scalar()
 
+        total_listings_day_before_previous = (
+            await db.execute(
+                select(func.count())
+                .select_from(Listing)
+                .where(func.date(Listing.first_seen_at) == day_before_yesterday)
+            )
+        ).scalar()
+
         total_scraped_previous_7_days = (
             await db.execute(
                 select(func.count())
@@ -467,10 +489,11 @@ async def read_stats(db: AsyncSession = Depends(get_db)) -> StatsResponse:
         price_unchanged_count=price_unchanged_count or 0,
         total_listings_previous_day=total_listings_previous_day or 0,
         total_listings_previous_7_days=total_listings_previous_7_days or 0,
-        total_listings_previous_30_days=total_listings_previous_30_days or 0,
-        total_scraped_previous_7_days=total_scraped_previous_7_days or 0,
-        total_scraped_previous_30_days=total_scraped_previous_30_days or 0,
-        source_stats=source_stats_dict,
+                total_listings_previous_30_days=total_listings_previous_30_days or 0,
+                total_listings_day_before_previous=total_listings_day_before_previous or 0,
+                total_scraped_previous_7_days=total_scraped_previous_7_days or 0,
+                total_scraped_previous_30_days=total_scraped_previous_30_days or 0,
+                source_stats=source_stats_dict,
     )
 
 

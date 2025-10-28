@@ -206,6 +206,16 @@ export function ListingsSection({
             </SelectContent>
           </Select>
 
+          <Select value={query.is_sold?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ is_sold: value === "ALL" ? undefined : value === "true" })}>
+            <SelectTrigger className="w-[150px]">
+              <SelectValue placeholder="Sold Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Items</SelectItem>
+              <SelectItem value="true">Sold Items</SelectItem>
+              <SelectItem value="false">Available Items</SelectItem>
+            </SelectContent>
+          </Select>
 
           <Select value={query.sort_order ?? "ALL"} onValueChange={(value) => onQueryChange({ currency: value === "ALL" ? undefined : value })}>
             <SelectTrigger className="w-[100px]">
