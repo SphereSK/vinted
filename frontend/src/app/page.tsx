@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { RefreshCcw, Plus, Loader2 } from "lucide-react";
@@ -53,7 +54,26 @@ export default function VintedControlCenter() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [selectedPeriod, setSelectedPeriod] = useState<"daily" | "weekly" | "monthly">("daily");
 
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const queryClient = useQueryClient();
+
+  // Initialize query from URL params
+  const initializeQueryFromURL = (): ListingsQuery => {
+    const params = new URLSearchParams(searchParams.toString());
+    return {
+      page: parseInt(params.get("page") || "1", 10),
+      page_size: parseInt(params.get("page_size") || "15", 10),
+      sort_field: (params.get("sort_field") || "last_seen_at") as string,
+      sort_order: (params.get("sort_order") || "desc") as "asc" | "desc",
+      search: params.get("search") || undefined,
+      price_min: params.get("price_min") ? Number(params.get("price_min")) : undefined,
+      price_max: params.get("price_max") ? Number(params.get("price_max")) : undefined,
+      condition: params.get("condition") || undefined,
+      platform: params.get("platform") || undefined,
+      source: params.get("source") || undefined,
+    };
+  };
 
   const { data: stats, isLoading: statsLoading } = useQuery<StatsResponse>({
     queryKey: ["stats"],
@@ -138,12 +158,27 @@ export default function VintedControlCenter() {
     queryClient.invalidateQueries();
   };
 
-  const [listingsQuery, setListingsQuery] = useState<ListingsQuery>({
-    page: 1,
-    page_size: 15,
-    sort_field: "last_seen_at",
-    sort_order: "desc",
-  });
+  const [listingsQuery, setListingsQuery] = useState<ListingsQuery>(() => initializeQueryFromURL());
+
+  // Sync URL with query changes
+  useEffect(() => {
+    const params = new URLSearchParams();
+
+    // Add all non-empty query params to URL
+    if (listingsQuery.page > 1) params.set("page", listingsQuery.page.toString());
+    if (listingsQuery.page_size !== 15) params.set("page_size", listingsQuery.page_size.toString());
+    if (listingsQuery.sort_field !== "last_seen_at") params.set("sort_field", listingsQuery.sort_field);
+    if (listingsQuery.sort_order !== "desc") params.set("sort_order", listingsQuery.sort_order);
+    if (listingsQuery.search) params.set("search", listingsQuery.search);
+    if (listingsQuery.price_min !== undefined) params.set("price_min", listingsQuery.price_min.toString());
+    if (listingsQuery.price_max !== undefined) params.set("price_max", listingsQuery.price_max.toString());
+    if (listingsQuery.condition) params.set("condition", listingsQuery.condition);
+    if (listingsQuery.platform) params.set("platform", listingsQuery.platform);
+    if (listingsQuery.source) params.set("source", listingsQuery.source);
+
+    const newURL = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    router.replace(newURL, { scroll: false });
+  }, [listingsQuery, router]);
 
   const { data: listingsPage, isLoading: listingsLoading } = useQuery<ListingsPage>({
     queryKey: ["listings", listingsQuery],

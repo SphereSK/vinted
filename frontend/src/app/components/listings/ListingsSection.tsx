@@ -1,36 +1,21 @@
 "use client";
 
-import { useMemo, useCallback } from "react";
-import { useQueryClient, QueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useState } from "react";
+import { QueryClient } from "@tanstack/react-query";
 import {
   ChevronLeft,
   ChevronRight,
   Loader2,
   RefreshCcw,
+  Filter,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
-import {
-  formatCurrency,
-  formatDate,
-  formatActiveDuration,
-} from "@/lib/format";
-
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableHeader,
   TableHead,
   TableRow,
-  TableCell,
   TableBody,
 } from "@/components/ui/table";
 import {
@@ -40,23 +25,20 @@ import {
   SelectContent,
   SelectItem,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 
 import { SortableHead } from "./SortableHead";
 import { ListingRow } from "./ListingRow";
+import { FilterPanel } from "../filters/FilterPanel";
 import type {
   CategoryResponse,
   ConditionResponse,
-  ListingResponse,
   ListingsPage,
   ListingsQuery,
   SourceResponse,
   ListingSortField,
   PlatformResponse,
+  FilterRequest,
 } from "@/lib/types";
-
-import { ListingAvatar } from "../common/ListingAvatar";
-import { PriceChangeBadge } from "../common/PriceChangeBadge";
 
 /*───────────────────────────────────────────────
   Constants
@@ -89,7 +71,58 @@ export function ListingsSection({
   query,
   queryClient,
 }: ListingsSectionProps) {
+  const [showFilters, setShowFilters] = useState(true);
 
+  // Convert query to filter format
+  const filters = useMemo((): FilterRequest => ({
+    title: query.search,
+    price_min: query.price_min,
+    price_max: query.price_max,
+    conditions: query.condition ? [query.condition] : [],
+    platforms: query.platform ? [query.platform] : [],
+    sources: query.source ? [query.source] : [],
+    categories: [],
+  }), [query]);
+
+  const handleFilterChange = useCallback((key: keyof FilterRequest, value: string | number | string[] | undefined) => {
+    if (key === "title") {
+      onQueryChange({ search: value as string | undefined, page: 1 });
+    } else if (key === "price_min" || key === "price_max") {
+      onQueryChange({ [key]: value as number | undefined, page: 1 });
+    } else if (key === "conditions") {
+      const values = value as string[];
+      onQueryChange({ condition: values[0] || undefined, page: 1 });
+    } else if (key === "platforms") {
+      const values = value as string[];
+      onQueryChange({ platform: values[0] || undefined, page: 1 });
+    } else if (key === "sources") {
+      const values = value as string[];
+      onQueryChange({ source: values[0] || undefined, page: 1 });
+    }
+  }, [onQueryChange]);
+
+  const handleFiltersChange = useCallback((updates: Partial<FilterRequest>) => {
+    const queryUpdates: Partial<ListingsQuery> = { page: 1 };
+    if ("title" in updates) queryUpdates.search = updates.title;
+    if ("price_min" in updates) queryUpdates.price_min = updates.price_min;
+    if ("price_max" in updates) queryUpdates.price_max = updates.price_max;
+    if ("conditions" in updates) queryUpdates.condition = updates.conditions?.[0];
+    if ("platforms" in updates) queryUpdates.platform = updates.platforms?.[0];
+    if ("sources" in updates) queryUpdates.source = updates.sources?.[0];
+    onQueryChange(queryUpdates);
+  }, [onQueryChange]);
+
+  const handleClearFilters = useCallback(() => {
+    onQueryChange({
+      search: undefined,
+      price_min: undefined,
+      price_max: undefined,
+      condition: undefined,
+      platform: undefined,
+      source: undefined,
+      page: 1,
+    });
+  }, [onQueryChange]);
 
   const handlePageChange = useCallback((newPage: number) => {
     onQueryChange({ page: newPage });
@@ -125,122 +158,22 @@ export function ListingsSection({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Input
-            placeholder="Search by title..."
-            value={query.search ?? ''}
-            onChange={(e) => onQueryChange({ search: e.target.value })}
-            className="w-[200px]"
-          />
-
-          <Input
-            placeholder="Min price..."
-            value={query.price_min ?? ''}
-            onChange={(e) => onQueryChange({ price_min: e.target.value ? Number(e.target.value) : undefined })}
-            className="w-[120px]"
-            type="number"
-            step="0.01"
-          />
-          <Input
-            placeholder="Max price..."
-            value={query.price_max ?? ''}
-            onChange={(e) => onQueryChange({ price_max: e.target.value ? Number(e.target.value) : undefined })}
-            className="w-[120px]"
-            type="number"
-            step="0.01"
-          />
-
-          <Select value={query.condition?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ condition: value === "ALL" ? undefined : Number(value) })}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Condition" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Conditions</SelectItem>
-              {conditions.map((cond) => (
-                <SelectItem key={cond.id} value={cond.id.toString()}>
-                  {cond.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={query.platform?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ platform: value === "ALL" ? undefined : Number(value) })}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Platform" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Platforms</SelectItem>
-              {platforms.map((plat) => (
-                <SelectItem key={plat.id} value={plat.id.toString()}>
-                  {plat.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={query.source?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ source: value === "ALL" ? undefined : Number(value) })}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Source" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Sources</SelectItem>
-              {sources.map((src) => (
-                <SelectItem key={src.id} value={src.id.toString()}>
-                  {src.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={query.category?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ category: value === "ALL" ? undefined : Number(value) })}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Categories</SelectItem>
-              {categories.map((cat) => (
-                <SelectItem key={cat.id} value={cat.id.toString()}>
-                  {cat.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Select value={query.is_sold?.toString() ?? "ALL"} onValueChange={(value) => onQueryChange({ is_sold: value === "ALL" ? undefined : value === "true" })}>
-            <SelectTrigger className="w-[150px]">
-              <SelectValue placeholder="Sold Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All Items</SelectItem>
-              <SelectItem value="true">Sold Items</SelectItem>
-              <SelectItem value="false">Available Items</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={query.sort_order ?? "ALL"} onValueChange={(value) => onQueryChange({ currency: value === "ALL" ? undefined : value })}>
-            <SelectTrigger className="w-[100px]">
-              <SelectValue placeholder="Currency" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">All</SelectItem>
-              {(listingsPage?.items.reduce((acc, item) => {
-                if (item.currency && !acc.includes(item.currency)) {
-                  acc.push(item.currency);
-                }
-                return acc;
-              }, [] as string[]) ?? []).map((cur) => (
-                <SelectItem key={cur} value={cur}>
-                  {cur}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="size-4" />
+            <span className="ml-1">{showFilters ? "Hide" : "Show"} Filters</span>
+          </Button>
 
           <Button
             variant="outline"
             size="sm"
             disabled={isLoading}
-            onClick={handleRefresh}>
+            onClick={handleRefresh}
+          >
             {isLoading ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
@@ -250,6 +183,21 @@ export function ListingsSection({
           </Button>
         </div>
       </div>
+
+      {showFilters && (
+        <FilterPanel
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          onFiltersChange={handleFiltersChange}
+          onClearFilters={handleClearFilters}
+          categories={categories}
+          platforms={platforms}
+          sources={sources}
+          conditions={conditions}
+          totalResults={listingsPage?.total_items ?? 0}
+          isLoading={isLoading}
+        />
+      )}
 
       {isLoading ? (
         <div className="flex h-24 items-center justify-center text-muted-foreground">

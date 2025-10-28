@@ -186,6 +186,32 @@ export interface ListingsQuery {
   price_max?: number;
 }
 
+export interface FilterRequest {
+  title?: string;
+  price_min?: number;
+  price_max?: number;
+  conditions?: string[];
+  platforms?: string[];
+  sources?: string[];
+  categories?: string[];
+}
+
+export interface FilterResponse {
+  results: ListingResponse[];
+  total: number;
+  availableFilters: {
+    conditions: ConditionResponse[];
+    platforms: PlatformResponse[];
+    sources: SourceResponse[];
+    categories: CategoryResponse[];
+  };
+}
+
+export interface FilterState extends FilterRequest {
+  isLoading: boolean;
+  error: Error | null;
+}
+
 export interface ListingsByPeriod {
   period: string;
   new_listings: number;
