@@ -507,6 +507,8 @@ def run_config(
     from app.db.models import ScrapeConfig
 
     async def _run():
+        logger = get_logger(__name__)
+
         async with Session() as session:
             result = await session.execute(
                 select(ScrapeConfig).where(ScrapeConfig.id == config_id)
@@ -522,10 +524,14 @@ def run_config(
 
             typer.secho(f"🚀 Running scrape for config #{config_id}: {config.name}", fg=typer.colors.CYAN)
 
+            # Convert categories list to single category_id (take first if multiple)
+            category_id = config.categories[0] if config.categories and len(config.categories) > 0 else None
+
             # Run the scrape with config parameters
             await scrape_and_store(
                 search_text=config.search_text,
-                categories=config.categories or [],
+                logger=logger,
+                category_id=category_id,
                 platform_ids=config.platform_ids or [],
                 max_pages=config.max_pages,
                 per_page=config.per_page,
@@ -533,7 +539,7 @@ def run_config(
                 fetch_details=config.fetch_details,
                 details_for_new_only=config.details_for_new_only,
                 use_proxy=config.use_proxy,
-                extra_filters=config.extra_filters or [],
+                extra=config.extra_filters or [],
                 order=config.order,
                 locales=config.locales or [],
                 error_wait_minutes=config.error_wait_minutes or 30,
@@ -541,8 +547,6 @@ def run_config(
                 base_url=config.base_url,
                 details_strategy=config.details_strategy or "browser",
                 details_concurrency=config.details_concurrency or 2,
-                extra_args=config.extra_args or [],
-                config_id=config_id,
             )
 
     asyncio.run(_run())
