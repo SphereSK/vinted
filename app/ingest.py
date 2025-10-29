@@ -585,7 +585,7 @@ async def _scrape_and_store_locale(
                     logger.error(f"DB error for {item.get('url')}: {e}")
                     await session.rollback()  # Reset transaction state to continue processing other items
 
-                await asyncio.sleep(delay + random.uniform(0, 0.5))
+                await asyncio.sleep(float(delay) + random.uniform(0, 0.5))
 
             # Track page timing
             page_elapsed = time.time() - page_start
