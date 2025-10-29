@@ -166,6 +166,24 @@ export function ConfigDialog({
       const res = await buildCronCommand({
         schedule: form.cron_schedule,
         search_text: form.search_text,
+        max_pages: form.max_pages,
+        per_page: form.per_page,
+        delay: form.delay,
+        categories: (form.categories as number[]).length > 0 ? (form.categories as number[]) : undefined,
+        platform_ids: (form.platform_ids as number[]).length > 0 ? (form.platform_ids as number[]) : undefined,
+        order: form.order || undefined,
+        extra_filters: stringToArray(form.extra_filters as string),
+        locales: stringToArray(form.locales as string),
+        extra_args: stringToArray(form.extra_args as string),
+        fetch_details: form.fetch_details,
+        details_for_new_only: form.details_for_new_only,
+        use_proxy: form.use_proxy,
+        error_wait_minutes: form.error_wait_minutes,
+        max_retries: form.max_retries,
+        base_url: form.base_url || undefined,
+        details_strategy: form.details_strategy,
+        details_concurrency: form.details_concurrency,
+        healthcheck_ping_url: form.healthcheck_ping_url || undefined,
       });
       setPreview(res);
     } catch (err) {

@@ -341,8 +341,8 @@ export function ListingsSection({
                   onSort={toggleSort}
                 />
                 <SortableHead
-                  label="Age"
-                  field="first_seen_at"
+                  label="Freshness"
+                  field="last_seen_at"
                   currentField={query.sort_field}
                   sortOrder={query.sort_order}
                   onSort={toggleSort}

@@ -103,7 +103,7 @@ export function ListingRow({ listing, conditions, platforms, sources, categories
       </TableCell>
 
       <TableCell className="text-xs text-muted-foreground">
-        {formatActiveDuration(listing.first_seen_at)}
+        {formatActiveDuration(listing.last_seen_at)}
       </TableCell>
     </TableRow>
   );
