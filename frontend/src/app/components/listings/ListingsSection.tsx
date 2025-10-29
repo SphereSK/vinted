@@ -86,10 +86,10 @@ export function ListingsSection({
     title: query.search,
     price_min: query.price_min,
     price_max: query.price_max,
-    conditions: query.condition ? [query.condition] : [],
-    platforms: query.platform ? [query.platform] : [],
-    sources: query.source ? [query.source] : [],
-    categories: query.category ? [query.category] : [],
+    conditions: query.condition_id ? [String(query.condition_id)] : [],
+    platforms: query.platform_id ? [String(query.platform_id)] : [],
+    sources: query.source_id ? [String(query.source_id)] : [],
+    categories: query.category_id ? [String(query.category_id)] : [],
   }), [query]);
 
   const handleFilterChange = useCallback((key: keyof FilterRequest, value: string | number | string[] | undefined) => {
@@ -99,16 +99,20 @@ export function ListingsSection({
       onQueryChange({ [key]: value as number | undefined, page: 1 });
     } else if (key === "conditions") {
       const values = value as string[];
-      onQueryChange({ condition: values[0] || undefined, page: 1 });
+      const id = values[0] ? parseInt(values[0], 10) : undefined;
+      onQueryChange({ condition_id: id, page: 1 });
     } else if (key === "platforms") {
       const values = value as string[];
-      onQueryChange({ platform: values[0] || undefined, page: 1 });
+      const id = values[0] ? parseInt(values[0], 10) : undefined;
+      onQueryChange({ platform_id: id, page: 1 });
     } else if (key === "sources") {
       const values = value as string[];
-      onQueryChange({ source: values[0] || undefined, page: 1 });
+      const id = values[0] ? parseInt(values[0], 10) : undefined;
+      onQueryChange({ source_id: id, page: 1 });
     } else if (key === "categories") {
       const values = value as string[];
-      onQueryChange({ category: values[0] || undefined, page: 1 });
+      const id = values[0] ? parseInt(values[0], 10) : undefined;
+      onQueryChange({ category_id: id, page: 1 });
     }
   }, [onQueryChange]);
 
@@ -117,10 +121,22 @@ export function ListingsSection({
     if ("title" in updates) queryUpdates.search = updates.title;
     if ("price_min" in updates) queryUpdates.price_min = updates.price_min;
     if ("price_max" in updates) queryUpdates.price_max = updates.price_max;
-    if ("conditions" in updates) queryUpdates.condition = updates.conditions?.[0];
-    if ("platforms" in updates) queryUpdates.platform = updates.platforms?.[0];
-    if ("sources" in updates) queryUpdates.source = updates.sources?.[0];
-    if ("categories" in updates) queryUpdates.category = updates.categories?.[0];
+    if ("conditions" in updates) {
+      const id = updates.conditions?.[0] ? parseInt(updates.conditions[0], 10) : undefined;
+      queryUpdates.condition_id = id;
+    }
+    if ("platforms" in updates) {
+      const id = updates.platforms?.[0] ? parseInt(updates.platforms[0], 10) : undefined;
+      queryUpdates.platform_id = id;
+    }
+    if ("sources" in updates) {
+      const id = updates.sources?.[0] ? parseInt(updates.sources[0], 10) : undefined;
+      queryUpdates.source_id = id;
+    }
+    if ("categories" in updates) {
+      const id = updates.categories?.[0] ? parseInt(updates.categories[0], 10) : undefined;
+      queryUpdates.category_id = id;
+    }
     onQueryChange(queryUpdates);
   }, [onQueryChange]);
 
@@ -129,10 +145,10 @@ export function ListingsSection({
       search: undefined,
       price_min: undefined,
       price_max: undefined,
-      condition: undefined,
-      platform: undefined,
-      source: undefined,
-      category: undefined,
+      condition_id: undefined,
+      platform_id: undefined,
+      source_id: undefined,
+      category_id: undefined,
       currency: undefined,
       is_sold: undefined,
       page: 1,

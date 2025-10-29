@@ -180,10 +180,10 @@ export interface ListingsQuery {
   size?: string;
   material?: string;
   color?: string;
-  condition?: string;
-  source?: string;
-  platform?: string;
-  category?: string;
+  condition_id?: number;
+  source_id?: number;
+  platform_id?: number;
+  category_id?: number;
   is_sold?: boolean;
   price_min?: number;
   price_max?: number;

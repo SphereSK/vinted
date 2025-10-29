@@ -71,10 +71,10 @@ export default function VintedControlCenter() {
       search: params.get("search") || undefined,
       price_min: params.get("price_min") ? Number(params.get("price_min")) : undefined,
       price_max: params.get("price_max") ? Number(params.get("price_max")) : undefined,
-      condition: params.get("condition") || undefined,
-      platform: params.get("platform") || undefined,
-      source: params.get("source") || undefined,
-      category: params.get("category") || undefined,
+      condition_id: params.get("condition_id") ? Number(params.get("condition_id")) : undefined,
+      platform_id: params.get("platform_id") ? Number(params.get("platform_id")) : undefined,
+      source_id: params.get("source_id") ? Number(params.get("source_id")) : undefined,
+      category_id: params.get("category_id") ? Number(params.get("category_id")) : undefined,
       currency: params.get("currency") || undefined,
       is_sold: params.get("is_sold") ? params.get("is_sold") === "true" : undefined,
     };
@@ -174,10 +174,10 @@ export default function VintedControlCenter() {
     if (listingsQuery.search) params.set("search", listingsQuery.search);
     if (listingsQuery.price_min !== undefined) params.set("price_min", listingsQuery.price_min.toString());
     if (listingsQuery.price_max !== undefined) params.set("price_max", listingsQuery.price_max.toString());
-    if (listingsQuery.condition) params.set("condition", listingsQuery.condition);
-    if (listingsQuery.platform) params.set("platform", listingsQuery.platform);
-    if (listingsQuery.source) params.set("source", listingsQuery.source);
-    if (listingsQuery.category) params.set("category", listingsQuery.category);
+    if (listingsQuery.condition_id !== undefined) params.set("condition_id", listingsQuery.condition_id.toString());
+    if (listingsQuery.platform_id !== undefined) params.set("platform_id", listingsQuery.platform_id.toString());
+    if (listingsQuery.source_id !== undefined) params.set("source_id", listingsQuery.source_id.toString());
+    if (listingsQuery.category_id !== undefined) params.set("category_id", listingsQuery.category_id.toString());
     if (listingsQuery.currency) params.set("currency", listingsQuery.currency);
     if (listingsQuery.is_sold !== undefined) params.set("is_sold", listingsQuery.is_sold.toString());
 
