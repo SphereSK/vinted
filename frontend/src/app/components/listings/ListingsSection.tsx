@@ -53,6 +53,10 @@ interface ListingsSectionProps {
   conditions?: ConditionResponse[];
   sources?: SourceResponse[];
   categories?: CategoryResponse[];
+  availableCurrencies?: string[];
+  soldStatuses?: Array<{ label: string; value: boolean }>;
+  priceMin?: number | null;
+  priceMax?: number | null;
   listingsPage: ListingsPage | null;
   isLoading: boolean;
   onQueryChange: (query: Partial<ListingsQuery>) => void;
@@ -65,6 +69,10 @@ export function ListingsSection({
   conditions = [],
   sources = [],
   categories = [],
+  availableCurrencies = [],
+  soldStatuses = [],
+  priceMin = null,
+  priceMax = null,
   listingsPage,
   isLoading,
   onQueryChange,
@@ -206,15 +214,11 @@ export function ListingsSection({
           isSold={query.is_sold}
           onSoldChange={(sold) => onQueryChange({ is_sold: sold, page: 1 })}
           currency={query.currency}
-          availableCurrencies={
-            listingsPage?.items.reduce((acc, item) => {
-              if (item.currency && !acc.includes(item.currency)) {
-                acc.push(item.currency);
-              }
-              return acc;
-            }, [] as string[]) ?? []
-          }
+          availableCurrencies={availableCurrencies}
           onCurrencyChange={(currency) => onQueryChange({ currency, page: 1 })}
+          soldStatuses={soldStatuses}
+          priceMin={priceMin}
+          priceMax={priceMax}
         />
       )}
 

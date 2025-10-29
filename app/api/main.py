@@ -32,6 +32,10 @@ from app.api.schemas import (
     ScrapeConfigResponse,
     CategoryResponse,
     StatsResponse,
+    FilterOptionsResponse,
+    ConditionResponse,
+    SourceResponse,
+    PlatformResponse,
 )
 from app.utils.categories import list_common_categories, list_video_game_platforms
 from app.ingest import scrape_and_store
@@ -340,6 +344,163 @@ async def get_listings(
             for row in source_records
             if not active_source_ids or row[0] in active_source_ids
         ],
+    )
+
+
+@app.get("/api/listings/filter-options", response_model=FilterOptionsResponse)
+async def get_filter_options(db: AsyncSession = Depends(get_db)) -> FilterOptionsResponse:
+    """Get available filter options based on active listings."""
+
+    # Query distinct condition_option_ids from active listings
+    condition_ids_result = await db.execute(
+        select(Listing.condition_option_id)
+        .where(Listing.is_active == True)
+        .where(Listing.condition_option_id.isnot(None))
+        .distinct()
+    )
+    condition_ids = [row[0] for row in condition_ids_result.fetchall()]
+
+    # Query distinct source_option_ids from active listings
+    source_ids_result = await db.execute(
+        select(Listing.source_option_id)
+        .where(Listing.is_active == True)
+        .where(Listing.source_option_id.isnot(None))
+        .distinct()
+    )
+    source_ids = [row[0] for row in source_ids_result.fetchall()]
+
+    # Query distinct category_ids from active listings
+    category_ids_result = await db.execute(
+        select(Listing.category_id)
+        .where(Listing.is_active == True)
+        .where(Listing.category_id.isnot(None))
+        .distinct()
+    )
+    category_ids = [row[0] for row in category_ids_result.fetchall()]
+
+    # Query distinct platform_ids from active listings (JSON array field)
+    platform_ids_result = await db.execute(
+        select(Listing.platform_ids)
+        .where(Listing.is_active == True)
+        .where(Listing.platform_ids.isnot(None))
+    )
+    platform_ids_set = set()
+    for row in platform_ids_result.fetchall():
+        if row[0]:  # platform_ids is a list
+            platform_ids_set.update(row[0])
+    platform_ids = list(platform_ids_set)
+
+    # Query distinct currencies from active listings
+    currencies_result = await db.execute(
+        select(Listing.currency)
+        .where(Listing.is_active == True)
+        .where(Listing.currency.isnot(None))
+        .distinct()
+        .order_by(Listing.currency)
+    )
+    currencies = [row[0] for row in currencies_result.fetchall()]
+
+    # Query distinct is_sold values from active listings
+    sold_statuses_result = await db.execute(
+        select(Listing.is_sold)
+        .where(Listing.is_active == True)
+        .distinct()
+    )
+    sold_values = [row[0] for row in sold_statuses_result.fetchall()]
+    sold_statuses = []
+    for is_sold in sorted(sold_values):  # False first, then True
+        if is_sold:
+            sold_statuses.append({"label": "Sold", "value": True})
+        else:
+            sold_statuses.append({"label": "Available", "value": False})
+
+    # Query price range from active listings
+    price_range_result = await db.execute(
+        select(func.min(Listing.price_cents), func.max(Listing.price_cents))
+        .where(Listing.is_active == True)
+        .where(Listing.price_cents.isnot(None))
+    )
+    price_min, price_max = price_range_result.fetchone()
+
+    # Fetch condition options
+    conditions = []
+    if condition_ids:
+        conditions_result = await db.execute(
+            select(ConditionOption)
+            .where(ConditionOption.id.in_(condition_ids))
+            .order_by(ConditionOption.label)
+        )
+        conditions = [
+            ConditionResponse(
+                id=c.id,
+                code=c.code,
+                label=c.label,
+                color=c.color,
+            )
+            for c in conditions_result.scalars().all()
+        ]
+
+    # Fetch source options
+    sources = []
+    if source_ids:
+        sources_result = await db.execute(
+            select(SourceOption)
+            .where(SourceOption.id.in_(source_ids))
+            .order_by(SourceOption.label)
+        )
+        sources = [
+            SourceResponse(
+                id=s.id,
+                code=s.code,
+                label=s.label,
+                color=getattr(s, 'color', None),
+            )
+            for s in sources_result.scalars().all()
+        ]
+
+    # Fetch category options
+    categories = []
+    if category_ids:
+        categories_result = await db.execute(
+            select(CategoryOption)
+            .where(CategoryOption.id.in_(category_ids))
+            .order_by(CategoryOption.name)
+        )
+        categories = [
+            CategoryResponse(
+                id=c.id,
+                name=c.name,
+                color=c.color,
+            )
+            for c in categories_result.scalars().all()
+        ]
+
+    # Fetch platform options
+    platforms = []
+    if platform_ids:
+        platforms_result = await db.execute(
+            select(PlatformOption)
+            .where(PlatformOption.id.in_(platform_ids))
+            .order_by(PlatformOption.name)
+        )
+        platforms = [
+            PlatformResponse(
+                id=p.id,
+                name=p.name,
+                color=p.color,
+            )
+            for p in platforms_result.scalars().all()
+        ]
+
+    return FilterOptionsResponse(
+        conditions=conditions,
+        sources=sources,
+        categories=categories,
+        platforms=platforms,
+        currencies=currencies,
+        sold_statuses=sold_statuses,
+        price_min=price_min,
+        price_max=price_max,
     )
 
 

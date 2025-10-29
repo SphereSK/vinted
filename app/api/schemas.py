@@ -411,3 +411,19 @@ class ListingsByPeriod(BaseModel):
 
 class ListingsByPeriodResponse(BaseModel):
     items: list[ListingsByPeriod]
+
+
+# Filter options schema
+class FilterOptionsResponse(BaseModel):
+    """Available filter options based on active listings."""
+    conditions: list[ConditionResponse] = Field(default_factory=list)
+    sources: list[SourceResponse] = Field(default_factory=list)
+    categories: list[CategoryResponse] = Field(default_factory=list)
+    platforms: list[PlatformResponse] = Field(default_factory=list)
+    currencies: list[str] = Field(default_factory=list)
+    sold_statuses: list[dict[str, str | bool]] = Field(
+        default_factory=list,
+        description="Available sold/available statuses with label and value",
+    )
+    price_min: Optional[int] = Field(None, description="Minimum price in cents")
+    price_max: Optional[int] = Field(None, description="Maximum price in cents")

@@ -32,6 +32,7 @@ import type {
   SourceResponse,
   ListingsQuery,
   ListingsByPeriodResponse,
+  FilterOptionsResponse,
 } from "@/lib/types";
 import {
   loadListingsToCache,
@@ -48,6 +49,7 @@ import {
   listConditions,
   listSources,
   fetchListingsByPeriod,
+  fetchFilterOptions,
 } from "@/lib/endpoints";
 
 export default function VintedControlCenter() {
@@ -96,24 +98,21 @@ export default function VintedControlCenter() {
     },
   });
 
-  const { data: categories = [] } = useQuery<CategoryResponse[]>({
+  // Fetch all categories/platforms for ConfigDialog (includes inactive)
+  const { data: allCategories = [] } = useQuery<CategoryResponse[]>({
     queryKey: ["categories"],
     queryFn: listCategories,
   });
 
-  const { data: platforms = [] } = useQuery<CategoryResponse[]>({
+  const { data: allPlatforms = [] } = useQuery<CategoryResponse[]>({
     queryKey: ["platforms"],
     queryFn: listPlatforms,
   });
 
-  const { data: conditions = [] } = useQuery<ConditionResponse[]>({
-    queryKey: ["conditions"],
-    queryFn: listConditions,
-  });
-
-  const { data: sources = [] } = useQuery<SourceResponse[]>({
-    queryKey: ["sources"],
-    queryFn: listSources,
+  // Fetch filter options based on active listings only
+  const { data: filterOptions } = useQuery<FilterOptionsResponse>({
+    queryKey: ["filterOptions"],
+    queryFn: fetchFilterOptions,
   });
 
   const { data: listingsByPeriod, isLoading: listingsByPeriodLoading } = useQuery<ListingsByPeriodResponse>({
@@ -324,10 +323,14 @@ export default function VintedControlCenter() {
 
         <TabsContent value="listings">
           <ListingsSection
-            platforms={platforms}
-            conditions={conditions}
-            sources={sources}
-            categories={categories}
+            platforms={filterOptions?.platforms ?? []}
+            conditions={filterOptions?.conditions ?? []}
+            sources={filterOptions?.sources ?? []}
+            categories={filterOptions?.categories ?? []}
+            availableCurrencies={filterOptions?.currencies ?? []}
+            soldStatuses={filterOptions?.sold_statuses ?? []}
+            priceMin={filterOptions?.price_min ?? null}
+            priceMax={filterOptions?.price_max ?? null}
             listingsPage={listingsPage}
             isLoading={listingsLoading}
             onQueryChange={handleListingsQueryChange}
@@ -364,8 +367,8 @@ export default function VintedControlCenter() {
         open={isConfigDialogOpen}
         onOpenChange={setConfigDialogOpen}
         config={selectedConfig}
-        categories={categories}
-        platforms={platforms}
+        categories={allCategories}
+        platforms={allPlatforms}
         onSave={handleSaveConfig}
       />
     </main>

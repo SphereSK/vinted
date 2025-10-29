@@ -36,6 +36,9 @@ interface FilterPanelProps {
   currency?: string;
   availableCurrencies?: string[];
   onCurrencyChange?: (currency: string | undefined) => void;
+  soldStatuses?: Array<{ label: string; value: boolean }>;
+  priceMin?: number | null;
+  priceMax?: number | null;
   className?: string;
 }
 
@@ -55,6 +58,9 @@ export function FilterPanel({
   currency,
   availableCurrencies = [],
   onCurrencyChange,
+  soldStatuses = [],
+  priceMin = null,
+  priceMax = null,
   className = "",
 }: FilterPanelProps) {
   const handleRemoveFilter = (key: keyof FilterRequest, value?: string) => {

@@ -225,3 +225,14 @@ export interface ListingsByPeriod {
 export interface ListingsByPeriodResponse {
   items: ListingsByPeriod[];
 }
+
+export interface FilterOptionsResponse {
+  conditions: ConditionResponse[];
+  sources: SourceResponse[];
+  categories: CategoryResponse[];
+  platforms: PlatformResponse[];
+  currencies: string[];
+  sold_statuses: Array<{ label: string; value: boolean }>;
+  price_min: number | null;
+  price_max: number | null;
+}
