@@ -105,10 +105,14 @@ async def verify_tracked_items(
     await init_db()
 
     async with Session() as session:
-        # Find items to verify (active but not seen recently)
+        # Find items to verify (not sold and visible, but not seen recently)
         cutoff_time = datetime.now(timezone.utc) - timedelta(hours=hours_since_last_seen)
 
-        query = select(Listing).where(Listing.last_seen_at < cutoff_time)
+        query = select(Listing).where(
+            Listing.last_seen_at < cutoff_time,
+            Listing.is_sold == False,
+            Listing.is_visible == True,
+        )
 
         # Optionally filter to only active items
         if not check_all:
@@ -162,10 +166,16 @@ async def verify_tracked_items(
                     continue
 
                 # Update database
+                # Also update last_seen_at to reflect when we verified the status
+                update_values = {
+                    **status,
+                    "last_seen_at": datetime.now(timezone.utc)
+                }
+
                 stmt = (
                     update(Listing)
                     .where(Listing.id == item.id)
-                    .values(**status)
+                    .values(**update_values)
                 )
                 await session.execute(stmt)
                 await session.commit()
@@ -182,7 +192,7 @@ async def verify_tracked_items(
                     logger.info(f"  🟢 Still available")
 
                 # Rate limiting
-                await asyncio.sleep(delay + random.uniform(0, 0.5))
+                await asyncio.sleep(float(delay) + random.uniform(0, 0.5))
 
             except Exception as e:
                 stats["errors"] += 1
