@@ -602,7 +602,7 @@ async def _scrape_and_store_locale(
             else:
                 consecutive_empty_pages = 0  # Reset counter when we find new items
 
-            await asyncio.sleep(delay)
+            await asyncio.sleep(float(delay))
 
     if driver:
         driver.quit()
