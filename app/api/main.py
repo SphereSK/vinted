@@ -324,12 +324,14 @@ async def get_listings(
         enriched.append(ListingResponse(**listing_dict))
 
     has_next = offset + len(enriched) < total
+    total_pages = (total + page_size - 1) // page_size  # Ceiling division
 
     return ListingListResponse(
         items=enriched,
         total=int(total),
         page=page,
         page_size=page_size,
+        total_pages=total_pages,
         has_next=has_next,
         available_currencies=available_currencies,
         available_conditions=[
